@@ -364,6 +364,6 @@ resource "aws_cloudwatch_dashboard" "retail_dashboard" {
 
 # CloudWatch Log Group for ECS
 resource "aws_cloudwatch_log_group" "dashboard" {
-  name              = "/ecs/retail-dashboard"
+  name              = "/ecs/retail-dashboard-demo"
   retention_in_days = 30
 }
