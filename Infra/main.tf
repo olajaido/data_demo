@@ -9,13 +9,13 @@ terraform {
 }
 
 provider "aws" {
-  region = "eu-west-2" 
+  region = "eu-west-2"
 }
 
 # S3 Bucket for Raw Data Storage
 resource "aws_s3_bucket" "retail_data_lake" {
   bucket = "retail-analysis-data-lake"
-  
+
   tags = {
     Environment = "Production"
     Project     = "RetailAnalysis"
@@ -48,11 +48,11 @@ resource "aws_sagemaker_notebook_instance_lifecycle_configuration" "init" {
 
 # SageMaker Notebook Instance
 resource "aws_sagemaker_notebook_instance" "retail_analysis" {
-  name                    = "retail-analysis-notebook"
-  role_arn               = aws_iam_role.sagemaker_role.arn
-  instance_type          = "ml.t3.medium"
-  lifecycle_config_name  = aws_sagemaker_notebook_instance_lifecycle_configuration.init.name
-  
+  name                  = "retail-analysis-notebook"
+  role_arn              = aws_iam_role.sagemaker_role.arn
+  instance_type         = "ml.t3.medium"
+  lifecycle_config_name = aws_sagemaker_notebook_instance_lifecycle_configuration.init.name
+
   tags = {
     Environment = "Production"
     Project     = "RetailAnalysis"
@@ -116,7 +116,7 @@ resource "aws_glue_crawler" "retail_crawler" {
     path = "s3://${aws_s3_bucket.retail_data_lake.bucket}/raw-data/"
   }
 
-  schedule = "cron(0 0 * * ? *)"  # Run daily at midnight
+  schedule = "cron(0 0 * * ? *)" # Run daily at midnight
 }
 
 # IAM Role for Glue
@@ -150,10 +150,10 @@ resource "aws_athena_workgroup" "retail_analysis" {
 
 # QuickSight User (if needed)
 resource "aws_quicksight_user" "analyst" {
-  user_name     = "retail-analyst"
-  email         = "analyst@yourdomain.com"
-  identity_type = "IAM"
-  user_role     = "AUTHOR"
+  user_name      = "retail-analyst"
+  email          = "analyst@yourdomain.com"
+  identity_type  = "IAM"
+  user_role      = "AUTHOR"
   aws_account_id = data.aws_caller_identity.current.account_id
 }
 
