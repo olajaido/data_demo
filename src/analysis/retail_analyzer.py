@@ -4,6 +4,7 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans, DBSCAN
 from sklearn.decomposition import PCA
+from sklearn.cluster import AgglomerativeClustering
 import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
@@ -268,6 +269,226 @@ class RetailAnalyzer:
         except Exception as e:
             logger.error(f"Error in product analysis: {str(e)}", exc_info=True)
             raise
+    def compare_clustering_algorithms(self, max_clusters=10):
+        """Compare different clustering algorithms"""
+        try:
+            logger.info("Comparing clustering algorithms...")
+            features_for_clustering = self.features_df.drop('CustomerID', axis=1)
+            scaled_features = StandardScaler().fit_transform(features_for_clustering)
+            
+            results = {
+                'kmeans': [],
+                'hierarchical': [],
+                'dbscan': []
+            }
+            
+            # K-means with different k values
+            logger.info("Evaluating K-means with different cluster numbers...")
+            for k in range(2, max_clusters + 1):
+                kmeans = KMeans(n_clusters=k, random_state=42)
+                labels = kmeans.fit_predict(scaled_features)
+                score = silhouette_score(scaled_features, labels)
+                results['kmeans'].append({
+                    'n_clusters': k,
+                    'silhouette_score': score,
+                    'labels': labels
+                })
+            
+            # Hierarchical Clustering
+            logger.info("Evaluating Hierarchical Clustering...")
+            for k in range(2, max_clusters + 1):
+                hierarchical = AgglomerativeClustering(n_clusters=k)
+                labels = hierarchical.fit_predict(scaled_features)
+                score = silhouette_score(scaled_features, labels)
+                results['hierarchical'].append({
+                    'n_clusters': k,
+                    'silhouette_score': score,
+                    'labels': labels
+                })
+            
+            # DBSCAN with different parameters
+            logger.info("Evaluating DBSCAN...")
+            eps_values = [0.3, 0.5, 0.7, 1.0]
+            min_samples_values = [5, 10, 15]
+            
+            for eps in eps_values:
+                for min_samples in min_samples_values:
+                    dbscan = DBSCAN(eps=eps, min_samples=min_samples)
+                    labels = dbscan.fit_predict(scaled_features)
+                    if len(np.unique(labels[labels >= 0])) > 1:  # Check if more than one cluster
+                        score = silhouette_score(scaled_features, labels)
+                        results['dbscan'].append({
+                            'eps': eps,
+                            'min_samples': min_samples,
+                            'n_clusters': len(np.unique(labels[labels >= 0])),
+                            'silhouette_score': score,
+                            'labels': labels
+                        })
+            
+            logger.info("Clustering comparison complete")
+            return results
+        except Exception as e:
+            logger.error(f"Error in clustering comparison: {str(e)}", exc_info=True)
+            raise
+
+    def analyze_seasonal_patterns(self):
+        """Analyze seasonal patterns in sales and customer behavior"""
+        try:
+            logger.info("Analyzing seasonal patterns...")
+            
+            # Add time-based features
+            self.df['Year'] = self.df['InvoiceDate'].dt.year
+            self.df['Month'] = self.df['InvoiceDate'].dt.month
+            self.df['DayOfWeek'] = self.df['InvoiceDate'].dt.dayofweek
+            self.df['Hour'] = self.df['InvoiceDate'].dt.hour
+            
+            # Define seasons
+            self.df['Season'] = pd.cut(self.df['Month'], 
+                                     bins=[0, 3, 6, 9, 12],
+                                     labels=['Winter', 'Spring', 'Summer', 'Fall'],
+                                     include_lowest=True)
+            
+            # Seasonal analysis
+            seasonal_patterns = {
+                'seasonal_sales': self.df.groupby('Season').agg({
+                    'TotalAmount': 'sum',
+                    'InvoiceNo': 'nunique',
+                    'CustomerID': 'nunique',
+                    'Quantity': 'sum'
+                }).round(2),
+                
+                'monthly_sales': self.df.groupby(['Year', 'Month']).agg({
+                    'TotalAmount': 'sum',
+                    'InvoiceNo': 'nunique',
+                    'CustomerID': 'nunique'
+                }).round(2),
+                
+                'daily_patterns': self.df.groupby('DayOfWeek').agg({
+                    'TotalAmount': 'sum',
+                    'InvoiceNo': 'nunique',
+                    'CustomerID': 'nunique'
+                }).round(2),
+                
+                'hourly_patterns': self.df.groupby('Hour').agg({
+                    'TotalAmount': 'sum',
+                    'InvoiceNo': 'nunique',
+                    'CustomerID': 'nunique'
+                }).round(2)
+            }
+            
+            # Calculate growth rates
+            yearly_sales = self.df.groupby('Year')['TotalAmount'].sum()
+            seasonal_patterns['year_over_year_growth'] = (
+                (yearly_sales - yearly_sales.shift(1)) / yearly_sales.shift(1) * 100
+            ).round(2)
+            
+            logger.info("Seasonal analysis complete")
+            return seasonal_patterns
+        except Exception as e:
+            logger.error(f"Error in seasonal analysis: {str(e)}", exc_info=True)
+            raise
+
+    def analyze_customer_behavior(self):
+        """Detailed analysis of customer behavior patterns"""
+        try:
+            logger.info("Analyzing customer behavior patterns...")
+            
+            # RFM Analysis
+            now = self.df['InvoiceDate'].max()
+            
+            rfm = self.df.groupby('CustomerID').agg({
+                'InvoiceDate': lambda x: (now - x.max()).days,  # Recency
+                'InvoiceNo': 'count',  # Frequency
+                'TotalAmount': 'sum'  # Monetary
+            }).reset_index()
+            
+            rfm.columns = ['CustomerID', 'Recency', 'Frequency', 'Monetary']
+            
+            # Create RFM segments
+            r_labels = range(4, 0, -1)
+            r_quartiles = pd.qcut(rfm['Recency'], q=4, labels=r_labels)
+            f_labels = range(1, 5)
+            f_quartiles = pd.qcut(rfm['Frequency'], q=4, labels=f_labels)
+            m_labels = range(1, 5)
+            m_quartiles = pd.qcut(rfm['Monetary'], q=4, labels=m_labels)
+            
+            rfm['R'] = r_quartiles
+            rfm['F'] = f_quartiles
+            rfm['M'] = m_quartiles
+            
+            # Calculate RFM Score
+            rfm['RFM_Score'] = rfm['R'].astype(str) + rfm['F'].astype(str) + rfm['M'].astype(str)
+            
+            # Customer value segments
+            def segment_customers(row):
+                if row['R'] == 4 and row['F'] == 4 and row['M'] == 4:
+                    return 'Best Customers'
+                elif row['R'] == 4 and row['F'] >= 3 and row['M'] >= 3:
+                    return 'Loyal Customers'
+                elif row['R'] >= 3 and row['F'] >= 3 and row['M'] >= 3:
+                    return 'Good Customers'
+                elif row['R'] >= 2 and row['F'] >= 2 and row['M'] >= 2:
+                    return 'Average Customers'
+                else:
+                    return 'Lost Customers'
+            
+            rfm['Customer_Segment'] = rfm.apply(segment_customers, axis=1)
+            
+            # Purchase patterns
+            purchase_patterns = {
+                'rfm_analysis': rfm,
+                'avg_order_value': self.df.groupby('CustomerID')['TotalAmount'].mean().describe(),
+                'purchase_frequency': self.df.groupby('CustomerID')['InvoiceNo'].count().describe(),
+                'customer_lifetime_value': (
+                    self.df.groupby('CustomerID')['TotalAmount'].sum() * 
+                    self.df.groupby('CustomerID')['InvoiceNo'].count()
+                ).describe()
+            }
+            
+            logger.info("Customer behavior analysis complete")
+            return purchase_patterns
+        except Exception as e:
+            logger.error(f"Error in customer behavior analysis: {str(e)}", exc_info=True)
+            raise
+
+    def create_enhanced_visualizations(self):
+        """Create enhanced visualizations for the analysis"""
+        try:
+            logger.info("Creating enhanced visualizations...")
+            
+            visualizations = {}
+            
+            # Customer Segmentation Visualization
+            pca = PCA(n_components=2)
+            features_for_pca = self.features_df.drop(['CustomerID', 'Cluster'], axis=1)
+            scaled_features = StandardScaler().fit_transform(features_for_pca)
+            pca_result = pca.fit_transform(scaled_features)
+            
+            viz_df = pd.DataFrame(data=pca_result, columns=['PC1', 'PC2'])
+            viz_df['Cluster'] = self.features_df['Cluster']
+            viz_df['TotalSpent'] = self.features_df['TotalSpent']
+            viz_df['Frequency'] = self.features_df['Frequency']
+            
+            visualizations['cluster_viz'] = viz_df
+            
+            # Sales Trends
+            daily_sales = self.df.groupby('InvoiceDate').agg({
+                'TotalAmount': 'sum',
+                'InvoiceNo': 'nunique',
+                'CustomerID': 'nunique'
+            }).reset_index()
+            
+            visualizations['sales_trends'] = daily_sales
+            
+            # Product Performance
+            product_metrics = self.analyze_product_performance()
+            visualizations['product_performance'] = product_metrics
+            
+            logger.info("Enhanced visualizations created")
+            return visualizations
+        except Exception as e:
+            logger.error(f"Error creating enhanced visualizations: {str(e)}", exc_info=True)
+            raise    
 
 if __name__ == "__main__":
     try:
