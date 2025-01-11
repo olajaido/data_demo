@@ -254,6 +254,9 @@ class RetailAnalyzer:
         """Analyze product performance"""
         try:
             logger.info("Analyzing product performance...")
+            # Convert StockCode to string type first
+            self.df['StockCode'] = self.df['StockCode'].astype(str)
+            
             product_analysis = self.df.groupby(['StockCode', 'Description']).agg({
                 'Quantity': 'sum',
                 'TotalAmount': 'sum',
