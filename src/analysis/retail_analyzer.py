@@ -62,7 +62,7 @@ class RetailAnalyzer:
                 logger.info("Starting data preprocessing...")
                 
                 # Convert Invoice Date to datetime
-                self.df['Invoice Date'] = pd.to_datetime(self.df['Invoice Date'])
+                self.df['InvoiceDate'] = pd.to_datetime(self.df['InvoiceDate'])
                 logger.info("Converted dates to datetime")
                 
                 # Create total amount column
