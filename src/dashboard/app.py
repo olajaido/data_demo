@@ -8,6 +8,14 @@ import sys
 import os
 from datetime import datetime
 import numpy as np
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Add the analysis directory to the Python path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'analysis'))
@@ -15,45 +23,122 @@ from retail_analyzer import RetailAnalyzer
 
 def load_data():
     """Load and process data using RetailAnalyzer"""
-    analyzer = RetailAnalyzer('s3://retail-analysis-data-demo/online_retail_II.xlsx')
-    df = analyzer.load_and_preprocess()
-    return analyzer, df
+    try:
+        logger.info("Starting data loading process...")
+        analyzer = RetailAnalyzer('s3://retail-analysis-data-demo/online_retail_II.xlsx')
+        logger.info("RetailAnalyzer initialized, attempting to load data...")
+        df = analyzer.load_and_preprocess()
+        if df is None:
+            logger.error("Data loading failed - DataFrame is None")
+            raise Exception("Failed to load data")
+        logger.info(f"Data loaded successfully. Shape: {df.shape}")
+        return analyzer, df
+    except Exception as e:
+        logger.error(f"Error in load_data: {str(e)}", exc_info=True)
+        raise
 
 def create_time_series_analysis(df):
     """Create detailed time series analysis"""
-    # Monthly trends
-    monthly = df.groupby(df['InvoiceDate'].dt.to_period('M')).agg({
-        'TotalAmount': 'sum',
-        'InvoiceNo': 'nunique',
-        'CustomerID': 'nunique'
-    }).reset_index()
-    monthly['InvoiceDate'] = monthly['InvoiceDate'].astype(str)
-    
-    # Quarterly trends
-    df['Quarter'] = df['InvoiceDate'].dt.to_period('Q').astype(str)
-    quarterly = df.groupby('Quarter').agg({
-        'TotalAmount': 'sum',
-        'InvoiceNo': 'nunique',
-        'CustomerID': 'nunique'
-    }).reset_index()
-    
-    # Year-over-Year comparison
-    df['Year'] = df['InvoiceDate'].dt.year
-    yearly = df.groupby('Year').agg({
-        'TotalAmount': 'sum',
-        'InvoiceNo': 'nunique',
-        'CustomerID': 'nunique'
-    }).reset_index()
-    
-    return monthly, quarterly, yearly
+    try:
+        logger.info("Starting time series analysis...")
+        # Monthly trends
+        monthly = df.groupby(df['InvoiceDate'].dt.to_period('M')).agg({
+            'TotalAmount': 'sum',
+            'InvoiceNo': 'nunique',
+            'CustomerID': 'nunique'
+        }).reset_index()
+        monthly['InvoiceDate'] = monthly['InvoiceDate'].astype(str)
+        
+        # Quarterly trends
+        df['Quarter'] = df['InvoiceDate'].dt.to_period('Q').astype(str)
+        quarterly = df.groupby('Quarter').agg({
+            'TotalAmount': 'sum',
+            'InvoiceNo': 'nunique',
+            'CustomerID': 'nunique'
+        }).reset_index()
+        
+        # Year-over-Year comparison
+        df['Year'] = df['InvoiceDate'].dt.year
+        yearly = df.groupby('Year').agg({
+            'TotalAmount': 'sum',
+            'InvoiceNo': 'nunique',
+            'CustomerID': 'nunique'
+        }).reset_index()
+        
+        logger.info("Time series analysis completed successfully")
+        return monthly, quarterly, yearly
+    except Exception as e:
+        logger.error(f"Error in time series analysis: {str(e)}", exc_info=True)
+        raise
+
+def create_geographic_analysis(df):
+    """Create geographic analysis visualizations"""
+    try:
+        logger.info("Creating geographic analysis...")
+        geo_analysis = df.groupby('Country').agg({
+            'TotalAmount': 'sum',
+            'CustomerID': 'nunique',
+            'InvoiceNo': 'nunique'
+        }).reset_index()
+        
+        fig = px.bar(geo_analysis.sort_values('TotalAmount', ascending=True).tail(10),
+                    x='TotalAmount',
+                    y='Country',
+                    orientation='h',
+                    title='Top 10 Countries by Sales')
+        
+        return fig, geo_analysis
+    except Exception as e:
+        logger.error(f"Error in geographic analysis: {str(e)}", exc_info=True)
+        raise
+
+def create_customer_segmentation(analyzer):
+    """Create customer segmentation analysis"""
+    try:
+        logger.info("Starting customer segmentation analysis...")
+        customer_features = analyzer.create_customer_features()
+        clustered_customers = analyzer.perform_clustering(n_clusters=5)
+        cluster_summary = analyzer.analyze_clusters()
+        
+        return clustered_customers, cluster_summary
+    except Exception as e:
+        logger.error(f"Error in customer segmentation: {str(e)}", exc_info=True)
+        raise
+
+def create_product_analysis(analyzer):
+    """Create product performance analysis"""
+    try:
+        logger.info("Starting product analysis...")
+        product_analysis = analyzer.analyze_product_performance()
+        top_products = product_analysis.head(10).reset_index()
+        
+        fig = px.bar(top_products,
+                    x='TotalAmount',
+                    y='Description',
+                    orientation='h',
+                    title='Top 10 Products by Revenue')
+        
+        return fig, product_analysis
+    except Exception as e:
+        logger.error(f"Error in product analysis: {str(e)}", exc_info=True)
+        raise
 
 def main():
-    st.set_page_config(layout="wide")
-    st.title('Retail Analysis Dashboard (2009-2011)')
-    
     try:
+        logger.info("Starting Streamlit dashboard...")
+        st.set_page_config(layout="wide")
+        st.title('Retail Analysis Dashboard (2009-2011)')
+        
         # Load data
-        analyzer, df = load_data()
+        try:
+            analyzer, df = load_data()
+            logger.info("Data loaded successfully")
+        except Exception as e:
+            st.error(f"Error loading data: {str(e)}")
+            st.error(f"Error type: {type(e).__name__}")
+            st.error(f"Full error details: {e.__dict__}")
+            logger.error("Failed to load data", exc_info=True)
+            return
         
         # Sidebar filters
         st.sidebar.title('Filters')
@@ -68,17 +153,16 @@ def main():
             default=df['Country'].unique()[:5]
         )
         
-        # Filter data based on selections
+        # Filter data
         mask = (df['InvoiceDate'].dt.date >= date_range[0]) & \
                (df['InvoiceDate'].dt.date <= date_range[1]) & \
                (df['Country'].isin(selected_countries))
         filtered_df = df[mask]
         
-        # 1. SALES TRENDS SECTION
-        st.header('1. Sales Trends Analysis')
-        
-        # Key metrics
+        # 1. Key Metrics
+        st.header('Key Metrics')
         col1, col2, col3, col4 = st.columns(4)
+        
         with col1:
             st.metric("Total Revenue", f"£{filtered_df['TotalAmount'].sum():,.2f}")
         with col2:
@@ -86,152 +170,67 @@ def main():
         with col3:
             st.metric("Total Customers", f"{filtered_df['CustomerID'].nunique():,}")
         with col4:
-            avg_order_value = filtered_df['TotalAmount'].sum() / filtered_df['InvoiceNo'].nunique()
-            st.metric("Avg Order Value", f"£{avg_order_value:.2f}")
+            avg_order = filtered_df['TotalAmount'].sum() / filtered_df['InvoiceNo'].nunique()
+            st.metric("Avg Order Value", f"£{avg_order:.2f}")
         
-        # Time series analysis
+        # 2. Sales Trends
+        st.header('Sales Trends')
         monthly, quarterly, yearly = create_time_series_analysis(filtered_df)
         
-        # Multiple time series views
-        time_period = st.selectbox('Select Time Period', ['Monthly', 'Quarterly', 'Yearly'])
-        if time_period == 'Monthly':
-            data = monthly
-            x_col = 'InvoiceDate'
-        elif time_period == 'Quarterly':
-            data = quarterly
-            x_col = 'Quarter'
-        else:
-            data = yearly
-            x_col = 'Year'
-            
-        fig = make_subplots(rows=2, cols=1, 
-                           subplot_titles=('Revenue Trend', 'Customer and Order Trends'))
+        # Sales trend visualization
+        fig = make_subplots(rows=2, cols=1, subplot_titles=('Monthly Revenue', 'Monthly Orders'))
         
-        # Revenue trend
         fig.add_trace(
-            go.Scatter(x=data[x_col], y=data['TotalAmount'], name='Revenue'),
+            go.Scatter(x=monthly['InvoiceDate'], y=monthly['TotalAmount'], name='Revenue'),
             row=1, col=1
         )
         
-        # Customers and Orders
         fig.add_trace(
-            go.Scatter(x=data[x_col], y=data['CustomerID'], name='Unique Customers'),
-            row=2, col=1
-        )
-        fig.add_trace(
-            go.Scatter(x=data[x_col], y=data['InvoiceNo'], name='Number of Orders'),
+            go.Scatter(x=monthly['InvoiceDate'], y=monthly['InvoiceNo'], name='Orders'),
             row=2, col=1
         )
         
-        fig.update_layout(height=800, showlegend=True)
+        fig.update_layout(height=600, showlegend=True)
         st.plotly_chart(fig, use_container_width=True)
         
-        # 2. CUSTOMER SEGMENTATION SECTION
-        st.header('2. Customer Segmentation Analysis')
+        # 3. Customer Segmentation
+        st.header('Customer Segmentation')
+        clustered_customers, cluster_summary = create_customer_segmentation(analyzer)
         
-        # Create and analyze customer segments
-        customer_features = analyzer.create_customer_features()
-        clustered_customers = analyzer.perform_clustering(n_clusters=5)
-        cluster_summary = analyzer.analyze_clusters()
+        # Display cluster summary
+        st.subheader('Cluster Characteristics')
+        st.dataframe(cluster_summary)
         
-        # Display cluster characteristics
-        st.subheader('Customer Segment Characteristics')
-        cluster_summary_formatted = cluster_summary.style.format({
-            'Frequency': '{:.0f}',
-            'TotalSpent': '£{:,.2f}',
-            'AvgTransactionValue': '£{:.2f}',
-            'CustomerLifespan': '{:.0f} days',
-            'AvgPurchaseFrequency': '{:.2f}',
-            'CustomerID': '{:.0f}'
-        })
-        st.dataframe(cluster_summary_formatted)
-        
-        # Customer behavior patterns
-        st.subheader('Customer Behavior Patterns')
-        behavior_cols = ['Frequency', 'TotalSpent', 'AvgTransactionValue']
-        for col in behavior_cols:
-            fig = px.box(clustered_customers, x='Cluster', y=col, 
-                        title=f'Distribution of {col} by Cluster')
-            st.plotly_chart(fig, use_container_width=True)
-        
-        # 3. PRODUCT PERFORMANCE SECTION
-        st.header('3. Product Performance Analysis')
-        
-        # Top products analysis
-        product_analysis = analyzer.analyze_product_performance()
-        top_products = product_analysis.head(10).reset_index()
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader('Top 10 Products by Revenue')
-            fig = px.bar(top_products, 
-                        x='TotalAmount',
-                        y='Description',
-                        orientation='h',
-                        title='Top 10 Products by Revenue')
-            fig.update_layout(yaxis={'categoryorder':'total ascending'})
-            st.plotly_chart(fig, use_container_width=True)
-            
-        with col2:
-            st.subheader('Top 10 Products by Quantity Sold')
-            top_by_quantity = product_analysis.sort_values('Quantity', ascending=False).head(10).reset_index()
-            fig = px.bar(top_by_quantity,
-                        x='Quantity',
-                        y='Description',
-                        orientation='h',
-                        title='Top 10 Products by Quantity')
-            fig.update_layout(yaxis={'categoryorder':'total ascending'})
-            st.plotly_chart(fig, use_container_width=True)
-            
-        # Product performance matrix
-        st.subheader('Product Performance Matrix')
-        product_matrix = product_analysis.copy()
-        product_matrix['AvgPrice'] = product_matrix['TotalAmount'] / product_matrix['Quantity']
-        
-        fig = px.scatter(product_matrix.reset_index(),
-                        x='Quantity',
-                        y='TotalAmount',
-                        size='AvgPrice',
-                        hover_data=['Description'],
-                        title='Product Performance Matrix')
+        # Cluster visualization
+        fig = px.scatter(clustered_customers, x='TotalSpent', y='Frequency',
+                        color='Cluster', hover_data=['CustomerID'],
+                        title='Customer Segments')
         st.plotly_chart(fig, use_container_width=True)
         
-        # 4. GEOGRAPHIC INSIGHTS SECTION
-        st.header('4. Geographic Insights')
+        # 4. Geographic Analysis
+        st.header('Geographic Analysis')
+        geo_fig, geo_analysis = create_geographic_analysis(filtered_df)
+        st.plotly_chart(geo_fig, use_container_width=True)
         
-        # Geographic distribution
-        geo_analysis = analyzer.analyze_geographic_distribution()
-        geo_df = geo_analysis.reset_index()
+        # Display detailed country metrics
+        st.subheader('Country Details')
+        st.dataframe(geo_analysis)
         
-        # Sales by country
-        fig = px.bar(geo_df,
-                    x='Country',
-                    y='TotalAmount',
-                    title='Sales by Country')
-        st.plotly_chart(fig, use_container_width=True)
+        # 5. Product Analysis
+        st.header('Product Analysis')
+        product_fig, product_analysis = create_product_analysis(analyzer)
+        st.plotly_chart(product_fig, use_container_width=True)
         
-        # Country growth analysis
-        country_growth = df.pivot_table(
-            index='Country',
-            columns=df['InvoiceDate'].dt.year,
-            values='TotalAmount',
-            aggfunc='sum'
-        ).fillna(0)
-        
-        country_growth['Growth'] = (country_growth[2011] - country_growth[2010]) / country_growth[2010] * 100
-        
-        st.subheader('Country Growth Analysis')
-        growth_df = country_growth.sort_values('Growth', ascending=False).reset_index()
-        fig = px.bar(growth_df,
-                    x='Country',
-                    y='Growth',
-                    title='Year-over-Year Growth by Country (%)')
-        st.plotly_chart(fig, use_container_width=True)
+        # Display top products table
+        st.subheader('Top Products Details')
+        st.dataframe(product_analysis.head(10))
         
     except Exception as e:
-        st.error(f"Error loading data: {str(e)}")
-        st.warning("Please make sure your data is uploaded to S3 and the path is correct.")
+        logger.error("Critical error in main function", exc_info=True)
+        st.error(f"Error: {str(e)}")
+        st.error(f"Error type: {type(e).__name__}")
+        st.error(f"Full error details: {e.__dict__}")
+        st.warning("Please check the logs for more details and ensure S3 access is configured correctly.")
 
 if __name__ == '__main__':
     main()
