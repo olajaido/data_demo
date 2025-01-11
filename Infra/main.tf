@@ -164,7 +164,7 @@ resource "aws_glue_crawler" "retail_crawler" {
   role          = aws_iam_role.glue_role.arn
 
   s3_target {
-    path = "s3://${aws_s3_bucket.retail_data_lake.bucket}/raw-data/"
+    path = "s3://retail-analysis-data-demo/online_retail_II.xlsx"
   }
 
   schedule = "cron(0 0 * * ? *)" # Run daily at midnight
