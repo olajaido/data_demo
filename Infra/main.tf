@@ -12,6 +12,57 @@ provider "aws" {
   region = "eu-west-2"
 }
 
+# VPC and Networking
+resource "aws_vpc" "main" {
+  cidr_block           = "10.0.0.0/16"
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+
+  tags = {
+    Name = "retail-analysis-vpc"
+  }
+}
+
+# Public Subnet
+resource "aws_subnet" "public" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.1.0/24"
+  availability_zone       = "eu-west-2a"
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "retail-analysis-public"
+  }
+}
+
+# Internet Gateway
+resource "aws_internet_gateway" "main" {
+  vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name = "retail-analysis-igw"
+  }
+}
+
+# Route Table
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.main.id
+  }
+
+  tags = {
+    Name = "retail-analysis-public-rt"
+  }
+}
+
+resource "aws_route_table_association" "public" {
+  subnet_id      = aws_subnet.public.id
+  route_table_id = aws_route_table.public.id
+}
+
 # S3 Bucket for Raw Data Storage
 resource "aws_s3_bucket" "retail_data_lake" {
   bucket = "retail-analysis-data-lake"
@@ -40,7 +91,7 @@ resource "aws_sagemaker_notebook_instance_lifecycle_configuration" "init" {
     # Install requirements
     sudo -u ec2-user -i <<'CONDA_COMMANDS'
     conda activate python3
-    pip install pandas>=1.3.0 numpy>=1.21.0 scikit-learn>=1.0.0 matplotlib>=3.4.0 seaborn>=0.11.0 plotly>=5.1.0
+    pip install pandas>=1.3.0 numpy>=1.21.0 scikit-learn>=1.0.0 matplotlib>=3.4.0 seaborn>=0.11.0 plotly>=5.1.0 streamlit>=1.0.0
     CONDA_COMMANDS
     SCRIPT
   )
@@ -148,18 +199,125 @@ resource "aws_athena_workgroup" "retail_analysis" {
   }
 }
 
-# QuickSight User (if needed)
-resource "aws_quicksight_user" "analyst" {
-  user_name      = "retail-analyst"
-  email          = "analyst@yourdomain.com"
-  identity_type  = "IAM"
-  user_role      = "AUTHOR"
-  aws_account_id = data.aws_caller_identity.current.account_id
-}
-
-# ECR Repository for custom ML models
+# ECR Repository for Dashboard and ML models
 resource "aws_ecr_repository" "retail_models" {
   name = "retail-analysis-models"
+}
+
+# ECS Cluster for Dashboard
+resource "aws_ecs_cluster" "dashboard" {
+  name = "retail-dashboard-cluster"
+}
+
+# Security Group for ECS Tasks
+resource "aws_security_group" "ecs_tasks" {
+  name        = "retail-dashboard-ecs-tasks"
+  description = "Allow inbound traffic to Streamlit dashboard"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description = "Streamlit port"
+    from_port   = 8501
+    to_port     = 8501
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# ECS Task Definition
+resource "aws_ecs_task_definition" "dashboard" {
+  family                   = "retail-dashboard"
+  requires_compatibilities = ["FARGATE"]
+  network_mode            = "awsvpc"
+  cpu                     = "256"
+  memory                  = "512"
+  execution_role_arn      = aws_iam_role.ecs_execution_role.arn
+  task_role_arn           = aws_iam_role.ecs_task_role.arn
+
+  container_definitions = jsonencode([
+    {
+      name  = "dashboard"
+      image = "${aws_ecr_repository.retail_models.repository_url}:latest"
+      portMappings = [
+        {
+          containerPort = 8501
+          protocol      = "tcp"
+        }
+      ]
+      environment = [
+        {
+          name  = "AWS_DEFAULT_REGION"
+          value = "eu-west-2"
+        }
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = "/ecs/retail-dashboard"
+          "awslogs-region"        = "eu-west-2"
+          "awslogs-stream-prefix" = "ecs"
+        }
+      }
+    }
+  ])
+}
+
+# IAM Role for ECS Task Execution
+resource "aws_iam_role" "ecs_execution_role" {
+  name = "retail-dashboard-execution-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ecs-tasks.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+# IAM Role for ECS Tasks
+resource "aws_iam_role" "ecs_task_role" {
+  name = "retail-dashboard-task-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ecs-tasks.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+# ECS Service
+resource "aws_ecs_service" "dashboard" {
+  name            = "retail-dashboard"
+  cluster         = aws_ecs_cluster.dashboard.id
+  task_definition = aws_ecs_task_definition.dashboard.arn
+  desired_count   = 1
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = [aws_subnet.public.id]
+    security_groups  = [aws_security_group.ecs_tasks.id]
+    assign_public_ip = true
+  }
 }
 
 # CloudWatch Dashboard for monitoring
@@ -174,18 +332,38 @@ resource "aws_cloudwatch_dashboard" "retail_dashboard" {
         y      = 0
         width  = 12
         height = 6
-
         properties = {
           metrics = [
             ["AWS/SageMaker", "CPUUtilization", "NotebookInstanceName", aws_sagemaker_notebook_instance.retail_analysis.name]
           ]
           period = 300
           stat   = "Average"
-          region = "us-east-1"
+          region = "eu-west-2"
           title  = "Notebook CPU Utilization"
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 6
+        width  = 12
+        height = 6
+        properties = {
+          metrics = [
+            ["AWS/ECS", "CPUUtilization", "ServiceName", aws_ecs_service.dashboard.name, "ClusterName", aws_ecs_cluster.dashboard.name]
+          ]
+          period = 300
+          stat   = "Average"
+          region = "eu-west-2"
+          title  = "Dashboard CPU Utilization"
         }
       }
     ]
   })
 }
 
+# CloudWatch Log Group for ECS
+resource "aws_cloudwatch_log_group" "dashboard" {
+  name              = "/ecs/retail-dashboard"
+  retention_in_days = 30
+}
