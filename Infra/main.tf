@@ -65,7 +65,7 @@ resource "aws_route_table_association" "public" {
 
 # S3 Bucket for Raw Data Storage
 resource "aws_s3_bucket" "retail_data_lake" {
-  bucket = "retail-analysis-data-lake"
+  bucket = "retail-analysis-data-demo"
 
   tags = {
     Environment = "Production"
@@ -83,7 +83,7 @@ resource "aws_s3_bucket_versioning" "retail_data_versioning" {
 
 # SageMaker Notebook Instance with Lifecycle Configuration
 resource "aws_sagemaker_notebook_instance_lifecycle_configuration" "init" {
-  name = "retail-analysis-lifecycle"
+  name = "retail-analysis-lifecycle-demo"
   on_start = base64encode(<<-SCRIPT
     #!/bin/bash
     set -e
@@ -99,7 +99,7 @@ resource "aws_sagemaker_notebook_instance_lifecycle_configuration" "init" {
 
 # SageMaker Notebook Instance
 resource "aws_sagemaker_notebook_instance" "retail_analysis" {
-  name                  = "retail-analysis-notebook"
+  name                  = "retail-analysis-notebook-demo"
   role_arn              = aws_iam_role.sagemaker_role.arn
   instance_type         = "ml.t3.medium"
   lifecycle_config_name = aws_sagemaker_notebook_instance_lifecycle_configuration.init.name
@@ -112,7 +112,7 @@ resource "aws_sagemaker_notebook_instance" "retail_analysis" {
 
 # IAM Role for SageMaker
 resource "aws_iam_role" "sagemaker_role" {
-  name = "sagemaker-retail-analysis-role"
+  name = "sagemaker-retail-analysis-demo-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -130,7 +130,7 @@ resource "aws_iam_role" "sagemaker_role" {
 
 # IAM Policy for SageMaker
 resource "aws_iam_role_policy" "sagemaker_policy" {
-  name = "sagemaker-retail-analysis-policy"
+  name = "sagemaker-retail-analysis-demo-policy"
   role = aws_iam_role.sagemaker_role.id
 
   policy = jsonencode({
@@ -154,13 +154,13 @@ resource "aws_iam_role_policy" "sagemaker_policy" {
 
 # Glue Catalog Database
 resource "aws_glue_catalog_database" "retail_db" {
-  name = "retail_analysis_db"
+  name = "retail_analysis_demo_b"
 }
 
 # Glue Crawler
 resource "aws_glue_crawler" "retail_crawler" {
   database_name = aws_glue_catalog_database.retail_db.name
-  name          = "retail-data-crawler"
+  name          = "retail-data-demo-crawler"
   role          = aws_iam_role.glue_role.arn
 
   s3_target {
@@ -172,7 +172,7 @@ resource "aws_glue_crawler" "retail_crawler" {
 
 # IAM Role for Glue
 resource "aws_iam_role" "glue_role" {
-  name = "glue-retail-analysis-role"
+  name = "glue-retail-analysis-demo-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -190,7 +190,7 @@ resource "aws_iam_role" "glue_role" {
 
 # Athena Workgroup
 resource "aws_athena_workgroup" "retail_analysis" {
-  name = "retail-analysis-workgroup"
+  name = "retail-analysis-demo-workgroup"
 
   configuration {
     result_configuration {
@@ -201,12 +201,12 @@ resource "aws_athena_workgroup" "retail_analysis" {
 
 # ECR Repository for Dashboard and ML models
 resource "aws_ecr_repository" "retail_models" {
-  name = "retail-analysis-models"
+  name = "retail-analysis-demo-models"
 }
 
 # ECS Cluster for Dashboard
 resource "aws_ecs_cluster" "dashboard" {
-  name = "retail-dashboard-cluster"
+  name = "retail-dashboard-demo-cluster"
 }
 
 # Security Group for ECS Tasks
@@ -271,7 +271,7 @@ resource "aws_ecs_task_definition" "dashboard" {
 
 # IAM Role for ECS Task Execution
 resource "aws_iam_role" "ecs_execution_role" {
-  name = "retail-dashboard-execution-role"
+  name = "retail-dashboard-execution-demo-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -289,7 +289,7 @@ resource "aws_iam_role" "ecs_execution_role" {
 
 # IAM Role for ECS Tasks
 resource "aws_iam_role" "ecs_task_role" {
-  name = "retail-dashboard-task-role"
+  name = "retail-dashboard-task-demo-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -307,7 +307,7 @@ resource "aws_iam_role" "ecs_task_role" {
 
 # ECS Service
 resource "aws_ecs_service" "dashboard" {
-  name            = "retail-dashboard"
+  name            = "retail-dashboard-demo"
   cluster         = aws_ecs_cluster.dashboard.id
   task_definition = aws_ecs_task_definition.dashboard.arn
   desired_count   = 1
