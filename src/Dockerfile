@@ -1,3 +1,4 @@
+# src/Dockerfile
 FROM python:3.9-slim
 
 WORKDIR /app
@@ -12,8 +13,9 @@ RUN apt-get update && \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the entire src directory
-COPY src/ .
+# Copy the analysis and dashboard directories
+COPY analysis/ analysis/
+COPY dashboard/ dashboard/
 
 # Set Python path to include the app directory
 ENV PYTHONPATH=/app
