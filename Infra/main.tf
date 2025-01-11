@@ -304,7 +304,27 @@ resource "aws_iam_role" "ecs_task_role" {
     ]
   })
 }
+resource "aws_iam_role_policy" "ecs_task_s3_policy" {
+  name = "ecs-task-s3-policy"
+  role = aws_iam_role.ecs_task_role.id
 
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          "arn:aws:s3:::retail-analysis-data-demo",
+          "arn:aws:s3:::retail-analysis-data-demo/*"
+        ]
+      }
+    ]
+  })
+}
 # ECS Service
 resource "aws_ecs_service" "dashboard" {
   name            = "retail-dashboard-demo"
