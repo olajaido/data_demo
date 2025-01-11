@@ -10,6 +10,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from sklearn.metrics import silhouette_score
 import warnings
+import boto3
+import io
 warnings.filterwarnings('ignore')
 
 class RetailAnalyzer:
@@ -21,25 +23,51 @@ class RetailAnalyzer:
         
     def load_and_preprocess(self):
         """Load and preprocess the retail dataset"""
-        # Load data
-        self.df = pd.read_csv(self.data_path, encoding='ISO-8859-1')
+        # Extract bucket and key from S3 path
+        bucket = self.data_path.split('/')[2]
+        key = '/'.join(self.data_path.split('/')[3:])
         
-        # Convert InvoiceDate to datetime
-        self.df['InvoiceDate'] = pd.to_datetime(self.df['InvoiceDate'])
+        # Initialize S3 client
+        s3_client = boto3.client('s3')
         
-        # Create total amount column
-        self.df['TotalAmount'] = self.df['Quantity'] * self.df['UnitPrice']
-        
-        # Remove cancelled orders (those starting with 'C')
-        self.df = self.df[~self.df['InvoiceNo'].astype(str).str.startswith('C')]
-        
-        # Remove rows with missing CustomerID
-        self.df = self.df.dropna(subset=['CustomerID'])
-        
-        # Remove entries with negative quantities or prices
-        self.df = self.df[(self.df['Quantity'] > 0) & (self.df['UnitPrice'] > 0)]
-        
-        return self.df
+        try:
+            # Get object from S3
+            obj = s3_client.get_object(Bucket=bucket, Key=key)
+            # Read Excel file
+            self.df = pd.read_excel(io.BytesIO(obj['Body'].read()))
+            
+            # Convert Invoice Date to datetime
+            self.df['Invoice Date'] = pd.to_datetime(self.df['Invoice Date'])
+            
+            # Create total amount column
+            self.df['TotalAmount'] = self.df['Quantity'] * self.df['Price']
+            
+            # Remove cancelled orders (those starting with 'C')
+            self.df = self.df[~self.df['Invoice'].astype(str).str.startswith('C')]
+            
+            # Remove rows with missing Customer ID
+            self.df = self.df.dropna(subset=['Customer ID'])
+            
+            # Remove entries with negative quantities or prices
+            self.df = self.df[(self.df['Quantity'] > 0) & (self.df['Price'] > 0)]
+            
+            # Rename columns to match the rest of the code
+            self.df = self.df.rename(columns={
+                'Invoice': 'InvoiceNo',
+                'StockCode': 'StockCode',
+                'Description': 'Description',
+                'Quantity': 'Quantity',
+                'Invoice Date': 'InvoiceDate',
+                'Price': 'UnitPrice',
+                'Customer ID': 'CustomerID',
+                'Country': 'Country'
+            })
+            
+            return self.df
+            
+        except Exception as e:
+            print(f"Error loading data: {str(e)}")
+            return None
     
     def create_customer_features(self):
         """Create customer-level features for clustering"""
@@ -141,7 +169,7 @@ class RetailAnalyzer:
 # Usage example:
 if __name__ == "__main__":
     # Initialize analyzer
-    analyzer = RetailAnalyzer('path_to_your_data.csv')
+    analyzer = RetailAnalyzer('s3://retail-analysis-data-demo/online_retail_II.xlsx')
     
     # Load and preprocess data
     df = analyzer.load_and_preprocess()

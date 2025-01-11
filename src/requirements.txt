@@ -10,3 +10,4 @@ plotly-express>=0.4.0
 openpyxl>=3.0.0  # For Excel file support
 python-dateutil>=2.8.0
 pyarrow>=7.0.0  # For better pandas performance
+openpyxl>=3.0.0

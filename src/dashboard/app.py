@@ -15,7 +15,7 @@ from retail_analyzer import RetailAnalyzer
 
 def load_data():
     """Load and process data using RetailAnalyzer"""
-    analyzer = RetailAnalyzer('s3://retail-analysis-data-lake/raw-data/retail_data.csv')
+    analyzer = RetailAnalyzer('s3://retail-analysis-data-demo/online_retail_II.xlsx')
     df = analyzer.load_and_preprocess()
     return analyzer, df
 

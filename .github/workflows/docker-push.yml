@@ -12,7 +12,7 @@ on:
 env:
   AWS_REGION: eu-west-2
   AWS_ROLE_ARN: arn:aws:iam::436549840164:role/github_action_role
-  ECR_REPOSITORY: retail-analysis-models
+  ECR_REPOSITORY: retail-analysis-demo-models
 
 permissions:
   id-token: write
@@ -48,4 +48,4 @@ jobs:
 
       - name: Update ECS Service
         run: |
-          aws ecs update-service --cluster retail-dashboard-cluster --service retail-dashboard --force-new-deployment
+          aws ecs update-service --cluster retail-dashboard-demo-cluster --service retail-dashboard-demo --force-new-deployment
