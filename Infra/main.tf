@@ -188,3 +188,4 @@ resource "aws_cloudwatch_dashboard" "retail_dashboard" {
     ]
   })
 }
+
