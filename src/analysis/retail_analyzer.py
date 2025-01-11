@@ -129,8 +129,14 @@ class RetailAnalyzer:
             # Flatten column names
             customer_features.columns = ['CustomerID', 'Frequency', 'TotalSpent', 'AvgTransactionValue', 'CustomerLifespan']
             
-            # Add additional features
-            customer_features['AvgPurchaseFrequency'] = customer_features['Frequency'] / customer_features['CustomerLifespan']
+            # Handle zero values in CustomerLifespan to avoid division by zero
+            customer_features['CustomerLifespan'] = customer_features['CustomerLifespan'].replace(0, 1)
+            
+            # Add additional features with safeguard against infinity
+            customer_features['AvgPurchaseFrequency'] = (customer_features['Frequency'] / customer_features['CustomerLifespan']).clip(upper=1e6)
+            
+            # Replace any infinity values with 0
+            customer_features = customer_features.replace([np.inf, -np.inf], 0)
             
             self.features_df = customer_features
             logger.info(f"Customer features created. Shape: {customer_features.shape}")
