@@ -6,12 +6,12 @@ on:
     branches:
       - main
     paths:
-      - './Infra/**'
+      - 'Infra/**'
   pull_request:
     branches:
       - main
     paths:
-      - './Infra/**'
+      - 'Infra/**'
   workflow_dispatch:
 
 env:
