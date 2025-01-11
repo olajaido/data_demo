@@ -345,7 +345,7 @@ def display_seasonal_analysis(analyzer):
         
         # Year over Year Growth
         st.subheader("Year over Year Growth")
-        yoy_growth = seasonal_patterns['year_over_year_growth'].reset_index()
+        yoy_growth = pd.DataFrame(seasonal_patterns['year_over_year_growth']).reset_index()
         fig = px.bar(yoy_growth,
                     x='Year',
                     y='TotalAmount',
@@ -402,7 +402,10 @@ def display_clustering_comparison(analyzer):
         
         # K-means results
         st.subheader("K-means Clustering Performance")
-        kmeans_scores = pd.DataFrame(clustering_results['kmeans'])
+        kmeans_scores = pd.DataFrame([
+            {'n_clusters': res['n_clusters'], 'silhouette_score': res['silhouette_score']}
+            for res in clustering_results['kmeans']
+        ])
         fig = px.line(kmeans_scores, 
                      x='n_clusters',
                      y='silhouette_score',
@@ -411,7 +414,10 @@ def display_clustering_comparison(analyzer):
         
         # Hierarchical Clustering results
         st.subheader("Hierarchical Clustering Performance")
-        hierarchical_scores = pd.DataFrame(clustering_results['hierarchical'])
+        hierarchical_scores = pd.DataFrame([
+            {'n_clusters': res['n_clusters'], 'silhouette_score': res['silhouette_score']}
+            for res in clustering_results['hierarchical']
+        ])
         fig = px.line(hierarchical_scores,
                      x='n_clusters',
                      y='silhouette_score',
@@ -439,10 +445,15 @@ def main():
         st.set_page_config(layout="wide")
         st.title('Retail Analysis Dashboard (2009-2011)')
         
-        # Load data
+        # Load data and create features
         try:
             analyzer, df = load_data()
             logger.info("Data loaded successfully")
+            
+            # Create customer features immediately after loading
+            customer_features = analyzer.create_customer_features()
+            logger.info("Customer features created successfully")
+            
         except Exception as e:
             st.error(f"Error loading data: {str(e)}")
             st.error(f"Error type: {type(e).__name__}")
@@ -482,17 +493,17 @@ def main():
         with col4:
             avg_order = filtered_df['TotalAmount'].sum() / filtered_df['InvoiceNo'].nunique()
             st.metric("Avg Order Value", f"£{avg_order:.2f}")
-            
-        # 2. Seasonal Analysis
-        display_seasonal_analysis(analyzer)
         
-        # 3. Customer Behavior Analysis
-        display_customer_behavior(analyzer)
-        
-        # 4. Clustering Analysis
+        # 2. Clustering Analysis
         display_clustering_comparison(analyzer)
         
-        # 5. Original Sales Trends
+        # 3. Seasonal Analysis
+        display_seasonal_analysis(analyzer)
+        
+        # 4. Customer Behavior Analysis
+        display_customer_behavior(analyzer)
+        
+        # 5. Sales Trends
         st.header('Sales Trends')
         monthly, quarterly, yearly = create_time_series_analysis(filtered_df)
         
@@ -516,15 +527,22 @@ def main():
         st.header('Geographic Analysis')
         country_analysis = analyzer.analyze_geographic_distribution()
         
+        # Create choropleth map
+        geo_df = country_analysis.reset_index()
         fig = px.choropleth(
-            country_analysis.reset_index(),
+            geo_df,
             locations='Country',
             locationmode='country names',
             color='TotalAmount',
-            title='Sales Distribution by Country',
-            color_continuous_scale='Viridis'
+            hover_data=['CustomerID', 'InvoiceNo'],
+            color_continuous_scale='Viridis',
+            title='Sales Distribution by Country'
         )
         st.plotly_chart(fig, use_container_width=True)
+        
+        # Display detailed country metrics
+        st.subheader('Country Details')
+        st.dataframe(geo_df)
         
         # 7. Product Analysis
         st.header('Product Analysis')
@@ -539,6 +557,10 @@ def main():
             title='Top 10 Products by Revenue'
         )
         st.plotly_chart(fig, use_container_width=True)
+        
+        # Display top products table
+        st.subheader('Top Products Details')
+        st.dataframe(top_products)
         
     except Exception as e:
         logger.error("Critical error in main function", exc_info=True)
