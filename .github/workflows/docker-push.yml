@@ -1,5 +1,57 @@
+# # .github/workflows/docker.yml
+# name: "Build and Push Docker Image"
+
+# on:
+#   push:
+#     branches:
+#       - main
+#     paths:
+#       - 'src/**'
+#   workflow_dispatch:
+
+# env:
+#   AWS_REGION: eu-west-2
+#   AWS_ROLE_ARN: arn:aws:iam::436549840164:role/github_action_role
+#   ECR_REPOSITORY: retail-analysis-demo-models
+
+# permissions:
+#   id-token: write
+#   contents: read
+
+# jobs:
+#   build-and-push:
+#     name: "Build and Push to ECR"
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - name: Checkout Repository
+#         uses: actions/checkout@v3
+
+#       - name: Configure AWS Credentials
+#         uses: aws-actions/configure-aws-credentials@v2
+#         with:
+#           role-to-assume: ${{ env.AWS_ROLE_ARN }}
+#           aws-region: ${{ env.AWS_REGION }}
+
+#       - name: Login to Amazon ECR
+#         id: login-ecr
+#         uses: aws-actions/amazon-ecr-login@v1
+
+#       - name: Build, Tag, and Push Image to ECR
+#         env:
+#           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+#           IMAGE_TAG: ${{ github.sha }}
+#         run: |
+#           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest src/
+#           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+#           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+#       - name: Update ECS Service
+#         run: |
+#           aws ecs update-service --cluster retail-dashboard-demo-cluster --service retail-dashboard-demo --force-new-deployment
+
 # .github/workflows/docker.yml
-name: "Build and Push Docker Image"
+name: "Build and Push SageMaker Images"
 
 on:
   push:
@@ -37,15 +89,49 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Build, Tag, and Push Image to ECR
+      # Build and Push Preprocessing Image
+      - name: Build and Push Preprocessing Image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest src/
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:preprocessing-$IMAGE_TAG \
+                     -t $ECR_REGISTRY/$ECR_REPOSITORY:preprocessing-latest \
+                     src/preprocessing
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:preprocessing-$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:preprocessing-latest
 
-      - name: Update ECS Service
+      # Build and Push Training Image
+      - name: Build and Push Training Image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
         run: |
-          aws ecs update-service --cluster retail-dashboard-demo-cluster --service retail-dashboard-demo --force-new-deployment
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:training-$IMAGE_TAG \
+                     -t $ECR_REGISTRY/$ECR_REPOSITORY:training-latest \
+                     src/training
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:training-$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:training-latest
+
+      # Build and Push Inference Image
+      - name: Build and Push Inference Image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:inference-$IMAGE_TAG \
+                     -t $ECR_REGISTRY/$ECR_REPOSITORY:inference-latest \
+                     src/inference
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:inference-$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:inference-latest
+
+      # Update SageMaker Endpoint
+      - name: Update SageMaker Endpoint
+        run: |
+          aws sagemaker update-endpoint \
+            --endpoint-name retail-clustering-endpoint \
+            --endpoint-config-name retail-clustering-endpoint-config
+      # Add this step after updating SageMaker endpoint
+      - name: Deploy Grafana Dashboard
+        run: |
+          python src/dashboards/grafana/deploy_dashboard.py      

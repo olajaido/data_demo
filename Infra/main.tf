@@ -1,4 +1,4 @@
-# main.tf
+# Provider configuration (unchanged)
 terraform {
   required_providers {
     aws = {
@@ -12,7 +12,7 @@ provider "aws" {
   region = "eu-west-2"
 }
 
-# VPC and Networking
+# VPC and Networking (unchanged)
 resource "aws_vpc" "main" {
   cidr_block           = "10.0.0.0/16"
   enable_dns_hostnames = true
@@ -23,7 +23,6 @@ resource "aws_vpc" "main" {
   }
 }
 
-# Public Subnet
 resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "10.0.1.0/24"
@@ -35,7 +34,6 @@ resource "aws_subnet" "public" {
   }
 }
 
-# Internet Gateway
 resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
 
@@ -44,7 +42,6 @@ resource "aws_internet_gateway" "main" {
   }
 }
 
-# Route Table
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
 
@@ -63,7 +60,7 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
-# S3 Bucket for Raw Data Storage
+# S3 Configuration (unchanged)
 resource "aws_s3_bucket" "retail_data_lake" {
   bucket = "retail-analysis-data-demo"
 
@@ -73,7 +70,6 @@ resource "aws_s3_bucket" "retail_data_lake" {
   }
 }
 
-# Enable versioning for the S3 bucket
 resource "aws_s3_bucket_versioning" "retail_data_versioning" {
   bucket = aws_s3_bucket.retail_data_lake.id
   versioning_configuration {
@@ -81,38 +77,92 @@ resource "aws_s3_bucket_versioning" "retail_data_versioning" {
   }
 }
 
-# SageMaker Notebook Instance with Lifecycle Configuration
-resource "aws_sagemaker_notebook_instance_lifecycle_configuration" "init" {
-  name = "retail-analysis-lifecycle-demo"
-  on_start = base64encode(<<-SCRIPT
-    #!/bin/bash
-    set -e
-    
-    # Install requirements
-    sudo -u ec2-user -i <<'CONDA_COMMANDS'
-    conda activate python3
-    pip install pandas>=1.3.0 numpy>=1.21.0 scikit-learn>=1.0.0 matplotlib>=3.4.0 seaborn>=0.11.0 plotly>=5.1.0 streamlit>=1.0.0
-    CONDA_COMMANDS
-    SCRIPT
-  )
-}
+# SageMaker Processing Job
+resource "aws_sagemaker_processing_job" "retail_preprocessing" {
+  name     = "retail-data-preprocessing"
+  role_arn = aws_iam_role.sagemaker_role.arn
 
-# SageMaker Notebook Instance
-resource "aws_sagemaker_notebook_instance" "retail_analysis" {
-  name                  = "retail-analysis-notebook-demo"
-  role_arn              = aws_iam_role.sagemaker_role.arn
-  instance_type         = "ml.t3.medium"
-  lifecycle_config_name = aws_sagemaker_notebook_instance_lifecycle_configuration.init.name
+  processing_resources {
+    cluster_config {
+      instance_count    = 1
+      instance_type     = "ml.m5.xlarge"
+      volume_size_in_gb = 30
+    }
+  }
 
-  tags = {
-    Environment = "Production"
-    Project     = "RetailAnalysis"
+  input_config {
+    input_name = "retail-input"
+    s3_input {
+      s3_uri        = "${aws_s3_bucket.retail_data_lake.bucket}/online_retail_II.xlsx"
+      local_path    = "/opt/ml/processing/input"
+      s3_data_type  = "S3Prefix"
+      s3_input_mode = "File"
+    }
+  }
+
+  output_config {
+    output_name = "retail-processed"
+    s3_output {
+      s3_uri     = "${aws_s3_bucket.retail_data_lake.bucket}/processed"
+      local_path = "/opt/ml/processing/output"
+    }
+  }
+
+  app_specification {
+    image_uri = "${aws_ecr_repository.retail_models.repository_url}:latest"
+    container_arguments = [
+      "--input-data", "/opt/ml/processing/input",
+      "--output-data", "/opt/ml/processing/output"
+    ]
   }
 }
 
-# IAM Role for SageMaker
-resource "aws_iam_role" "sagemaker_role" {
-  name = "sagemaker-retail-analysis-demo-role"
+# Feature Store
+resource "aws_sagemaker_feature_group" "retail_features" {
+  feature_group_name             = "retail-customer-features"
+  record_identifier_feature_name = "CustomerID"
+  event_time_feature_name        = "InvoiceDate"
+  role_arn                      = aws_iam_role.sagemaker_role.arn
+
+  feature_definition {
+    feature_name = "TotalSpent"
+    feature_type = "Fractional"
+  }
+
+  feature_definition {
+    feature_name = "Frequency"
+    feature_type = "Integral"
+  }
+
+  feature_definition {
+    feature_name = "AvgTransactionValue"
+    feature_type = "Fractional"
+  }
+
+  feature_definition {
+    feature_name = "CustomerLifespan"
+    feature_type = "Integral"
+  }
+
+  feature_definition {
+    feature_name = "AvgPurchaseFrequency"
+    feature_type = "Fractional"
+  }
+
+  offline_store_config {
+    s3_storage_config {
+      s3_uri = "s3://${aws_s3_bucket.retail_data_lake.bucket}/feature-store/"
+    }
+  }
+
+  online_store_config {
+    enable_online_store = true
+  }
+}
+
+# SageMaker Model Execution Role
+resource "aws_iam_role" "sagemaker_execution_role" {
+  name = "sagemaker-model-execution-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -128,10 +178,10 @@ resource "aws_iam_role" "sagemaker_role" {
   })
 }
 
-# IAM Policy for SageMaker
-resource "aws_iam_role_policy" "sagemaker_policy" {
-  name = "sagemaker-retail-analysis-demo-policy"
-  role = aws_iam_role.sagemaker_role.id
+# SageMaker Model Execution Policy
+resource "aws_iam_role_policy" "sagemaker_execution_policy" {
+  name = "sagemaker-model-execution-policy"
+  role = aws_iam_role.sagemaker_execution_role.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -141,38 +191,94 @@ resource "aws_iam_role_policy" "sagemaker_policy" {
         Action = [
           "s3:GetObject",
           "s3:PutObject",
-          "s3:ListBucket"
+          "s3:ListBucket",
+          "sagemaker:CreateModel",
+          "sagemaker:CreateEndpoint",
+          "sagemaker:CreateEndpointConfig",
+          "sagemaker:InvokeEndpoint"
         ]
-        Resource = [
-          aws_s3_bucket.retail_data_lake.arn,
-          "${aws_s3_bucket.retail_data_lake.arn}/*"
-        ]
+        Resource = "*"
       }
     ]
   })
 }
 
-# Glue Catalog Database
-resource "aws_glue_catalog_database" "retail_db" {
-  name = "retail_analysis_demo_b"
-}
+# Update the SageMaker Model resource
+resource "aws_sagemaker_model" "retail_model" {
+  name               = "retail-clustering-model"
+  execution_role_arn = aws_iam_role.sagemaker_execution_role.arn  # Added this line
+  //role_arn           = aws_iam_role.sagemaker_role.arn
 
-# Glue Crawler
-resource "aws_glue_crawler" "retail_crawler" {
-  database_name = aws_glue_catalog_database.retail_db.name
-  name          = "retail-data-demo-crawler"
-  role          = aws_iam_role.glue_role.arn
-
-  s3_target {
-    path = "s3://retail-analysis-data-demo/online_retail_II.xlsx"
+  primary_container {
+    image = "${aws_ecr_repository.retail_models.repository_url}:latest"
+    mode  = "SingleModel"
+    model_data_url = "s3://${aws_s3_bucket.retail_data_lake.bucket}/models/clustering-model.tar.gz"
   }
 
-  schedule = "cron(0 0 * * ? *)" # Run daily at midnight
+  tags = {
+    Environment = "Production"
+    Project     = "RetailAnalysis"
+  }
 }
 
-# IAM Role for Glue
-resource "aws_iam_role" "glue_role" {
-  name = "glue-retail-analysis-demo-role"
+# SageMaker Endpoint Configuration
+resource "aws_sagemaker_endpoint_configuration" "retail_endpoint" {
+  name = "retail-clustering-endpoint-config"
+
+  production_variants {
+    variant_name           = "AllTraffic"
+    model_name            = aws_sagemaker_model.retail_model.name
+    instance_type         = "ml.t2.medium"
+    initial_instance_count = 1
+  }
+
+  tags = {
+    Environment = "Production"
+    Project     = "RetailAnalysis"
+  }
+}
+
+# SageMaker Endpoint
+resource "aws_sagemaker_endpoint" "retail_endpoint" {
+  name                 = "retail-clustering-endpoint"
+  endpoint_config_name = aws_sagemaker_endpoint_configuration.retail_endpoint.name
+
+  tags = {
+    Environment = "Production"
+    Project     = "RetailAnalysis"
+  }
+}
+
+# SageMaker Notebook Instance (unchanged)
+resource "aws_sagemaker_notebook_instance" "retail_analysis" {
+  name                  = "retail-analysis-notebook-demo"
+  role_arn              = aws_iam_role.sagemaker_role.arn
+  instance_type         = "ml.t3.medium"
+  lifecycle_config_name = aws_sagemaker_notebook_instance_lifecycle_configuration.init.name
+
+  tags = {
+    Environment = "Production"
+    Project     = "RetailAnalysis"
+  }
+}
+
+# Amazon Managed Grafana Workspace
+resource "aws_grafana_workspace" "retail_dashboard" {
+  name                     = "retail-analysis-dashboard"
+  account_access_type      = "CURRENT_ACCOUNT"
+  authentication_providers = ["AWS_SSO"]
+  permission_type         = "SERVICE_MANAGED"
+  data_sources            = ["CLOUDWATCH", "AMAZON_OPENSEARCH_SERVICE"]
+  
+  tags = {
+    Environment = "Production"
+    Project     = "RetailAnalysis"
+  }
+}
+
+# IAM Role for Grafana
+resource "aws_iam_role" "grafana_role" {
+  name = "grafana-retail-analysis-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -181,132 +287,17 @@ resource "aws_iam_role" "glue_role" {
         Action = "sts:AssumeRole"
         Effect = "Allow"
         Principal = {
-          Service = "glue.amazonaws.com"
+          Service = "grafana.amazonaws.com"
         }
       }
     ]
   })
 }
 
-# Athena Workgroup
-resource "aws_athena_workgroup" "retail_analysis" {
-  name = "retail-analysis-demo-workgroup"
-
-  configuration {
-    result_configuration {
-      output_location = "s3://${aws_s3_bucket.retail_data_lake.bucket}/athena-results/"
-    }
-  }
-}
-
-# ECR Repository for Dashboard and ML models
-resource "aws_ecr_repository" "retail_models" {
-  name = "retail-analysis-demo-models"
-}
-
-# ECS Cluster for Dashboard
-resource "aws_ecs_cluster" "dashboard" {
-  name = "retail-dashboard-demo-cluster"
-}
-
-# Security Group for ECS Tasks
-resource "aws_security_group" "ecs_tasks" {
-  name        = "retail-dashboard-ecs-tasks"
-  description = "Allow inbound traffic to Streamlit dashboard"
-  vpc_id      = aws_vpc.main.id
-
-  ingress {
-    description = "Streamlit port"
-    from_port   = 8501
-    to_port     = 8501
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-}
-
-# ECS Task Definition
-resource "aws_ecs_task_definition" "dashboard" {
-  family                   = "retail-dashboard"
-  requires_compatibilities = ["FARGATE"]
-  network_mode             = "awsvpc"
-  cpu                      = "1024"
-  memory                   = "2048"
-  execution_role_arn       = aws_iam_role.ecs_execution_role.arn
-  task_role_arn            = aws_iam_role.ecs_task_role.arn
-
-  container_definitions = jsonencode([
-    {
-      name  = "dashboard"
-      image = "${aws_ecr_repository.retail_models.repository_url}:latest"
-      portMappings = [
-        {
-          containerPort = 8501
-          protocol      = "tcp"
-        }
-      ]
-      environment = [
-        {
-          name  = "AWS_DEFAULT_REGION"
-          value = "eu-west-2"
-        }
-      ]
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          "awslogs-group"         = "/ecs/retail-dashboard"
-          "awslogs-region"        = "eu-west-2"
-          "awslogs-stream-prefix" = "ecs"
-        }
-      }
-    }
-  ])
-}
-
-# IAM Role for ECS Task Execution
-resource "aws_iam_role" "ecs_execution_role" {
-  name = "retail-dashboard-execution-demo-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "ecs-tasks.amazonaws.com"
-        }
-      }
-    ]
-  })
-}
-
-# IAM Role for ECS Tasks
-resource "aws_iam_role" "ecs_task_role" {
-  name = "retail-dashboard-task-demo-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "ecs-tasks.amazonaws.com"
-        }
-      }
-    ]
-  })
-}
-resource "aws_iam_role_policy" "ecs_task_s3_policy" {
-  name = "ecs-task-s3-policy"
-  role = aws_iam_role.ecs_task_role.id
+# Enhanced SageMaker Role Policy
+resource "aws_iam_role_policy" "sagemaker_enhanced_policy" {
+  name = "sagemaker-retail-enhanced-policy"
+  role = aws_iam_role.sagemaker_role.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -314,33 +305,20 @@ resource "aws_iam_role_policy" "ecs_task_s3_policy" {
       {
         Effect = "Allow"
         Action = [
-          "s3:GetObject",
-          "s3:ListBucket"
+          "s3:*",
+          "sagemaker:*",
+          "ecr:*",
+          "cloudwatch:*",
+          "logs:*",
+          "iam:PassRole"
         ]
-        Resource = [
-          "arn:aws:s3:::retail-analysis-data-demo",
-          "arn:aws:s3:::retail-analysis-data-demo/*"
-        ]
+        Resource = "*"
       }
     ]
   })
 }
-# ECS Service
-resource "aws_ecs_service" "dashboard" {
-  name            = "retail-dashboard-demo"
-  cluster         = aws_ecs_cluster.dashboard.id
-  task_definition = aws_ecs_task_definition.dashboard.arn
-  desired_count   = 1
-  launch_type     = "FARGATE"
 
-  network_configuration {
-    subnets          = [aws_subnet.public.id]
-    security_groups  = [aws_security_group.ecs_tasks.id]
-    assign_public_ip = true
-  }
-}
-
-# CloudWatch Dashboard for monitoring
+# CloudWatch Dashboard
 resource "aws_cloudwatch_dashboard" "retail_dashboard" {
   dashboard_name = "retail-analysis-metrics"
 
@@ -361,29 +339,12 @@ resource "aws_cloudwatch_dashboard" "retail_dashboard" {
           region = "eu-west-2"
           title  = "Notebook CPU Utilization"
         }
-      },
-      {
-        type   = "metric"
-        x      = 0
-        y      = 6
-        width  = 12
-        height = 6
-        properties = {
-          metrics = [
-            ["AWS/ECS", "CPUUtilization", "ServiceName", aws_ecs_service.dashboard.name, "ClusterName", aws_ecs_cluster.dashboard.name]
-          ]
-          period = 300
-          stat   = "Average"
-          region = "eu-west-2"
-          title  = "Dashboard CPU Utilization"
-        }
       }
     ]
   })
 }
 
-# CloudWatch Log Group for ECS
-resource "aws_cloudwatch_log_group" "dashboard" {
-  name              = "/ecs/retail-dashboard-demo"
-  retention_in_days = 30
+# ECR Repository (kept for model storage)
+resource "aws_ecr_repository" "retail_models" {
+  name = "retail-analysis-demo-models"
 }
