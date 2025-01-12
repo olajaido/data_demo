@@ -719,28 +719,38 @@ resource "aws_sagemaker_feature_group" "retail_features" {
   role_arn                       = aws_iam_role.sagemaker_role.arn
 
   feature_definition {
+    feature_name = "CustomerID"
+    feature_type = "Integer"
+  }
+
+  feature_definition {
+    feature_name = "InvoiceDate"
+    feature_type = "String"
+  }
+
+  feature_definition {
     feature_name = "TotalSpent"
-    feature_type = "Fractional"
+    feature_type = "Float"
   }
 
   feature_definition {
     feature_name = "Frequency"
-    feature_type = "Integral"
+    feature_type = "Integer"
   }
 
   feature_definition {
     feature_name = "AvgTransactionValue"
-    feature_type = "Fractional"
+    feature_type = "Float"
   }
 
   feature_definition {
     feature_name = "CustomerLifespan"
-    feature_type = "Integral"
+    feature_type = "Integer"
   }
 
   feature_definition {
     feature_name = "AvgPurchaseFrequency"
-    feature_type = "Fractional"
+    feature_type = "Float"
   }
 
   offline_store_config {
