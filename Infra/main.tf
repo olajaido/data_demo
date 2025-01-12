@@ -663,6 +663,54 @@ resource "aws_iam_role_policy" "sagemaker_comprehensive_policy" {
 }
 
 # Preprocessing Job using null_resource
+# resource "null_resource" "retail_preprocessing_job" {
+#   triggers = {
+#     bucket_id      = aws_s3_bucket.retail_data_lake.id
+#     repository_url = aws_ecr_repository.retail_models.repository_url
+#     role_arn       = aws_iam_role.sagemaker_role.arn
+#   }
+
+#   provisioner "local-exec" {
+#     command = <<-EOT
+#       aws sagemaker create-processing-job \
+#         --processing-job-name "retail-data-preprocessing-$(date +%Y%m%d%H%M%S)" \
+#         --role-arn ${aws_iam_role.sagemaker_role.arn} \
+#         --processing-resources '{"ClusterConfig": {"InstanceCount": 1, "InstanceType": "ml.m5.xlarge", "VolumeSizeInGB": 30}}' \
+#         --input-config '[{
+#           "InputName": "retail-input", 
+#           "S3Input": {
+#             "S3Uri": "s3://${aws_s3_bucket.retail_data_lake.bucket}/online_retail_II.xlsx", 
+#             "LocalPath": "/opt/ml/processing/input", 
+#             "S3DataType": "S3Prefix", 
+#             "S3InputMode": "File"
+#           }
+#         }]' \
+#         --output-config '[{
+#           "OutputName": "retail-processed", 
+#           "S3Output": {
+#             "S3Uri": "s3://${aws_s3_bucket.retail_data_lake.bucket}/processed", 
+#             "LocalPath": "/opt/ml/processing/output"
+#           }
+#         }]' \
+#         --app-specification '{
+#           "ImageUri": "${aws_ecr_repository.retail_models.repository_url}:latest", 
+#           "ContainerArguments": [
+#             "--input-data", "/opt/ml/processing/input", 
+#             "--output-data", "/opt/ml/processing/output"
+#           ]
+#         }'
+#     EOT
+
+#     interpreter = ["/bin/bash", "-c"]
+#   }
+
+#   depends_on = [
+#     aws_s3_bucket.retail_data_lake,
+#     aws_ecr_repository.retail_models,
+#     aws_iam_role.sagemaker_role
+#   ]
+# }
+
 resource "null_resource" "retail_preprocessing_job" {
   triggers = {
     bucket_id      = aws_s3_bucket.retail_data_lake.id
@@ -675,30 +723,10 @@ resource "null_resource" "retail_preprocessing_job" {
       aws sagemaker create-processing-job \
         --processing-job-name "retail-data-preprocessing-$(date +%Y%m%d%H%M%S)" \
         --role-arn ${aws_iam_role.sagemaker_role.arn} \
-        --processing-resources '{"ClusterConfig": {"InstanceCount": 1, "InstanceType": "ml.m5.xlarge", "VolumeSizeInGB": 30}}' \
-        --input-config '[{
-          "InputName": "retail-input", 
-          "S3Input": {
-            "S3Uri": "s3://${aws_s3_bucket.retail_data_lake.bucket}/online_retail_II.xlsx", 
-            "LocalPath": "/opt/ml/processing/input", 
-            "S3DataType": "S3Prefix", 
-            "S3InputMode": "File"
-          }
-        }]' \
-        --output-config '[{
-          "OutputName": "retail-processed", 
-          "S3Output": {
-            "S3Uri": "s3://${aws_s3_bucket.retail_data_lake.bucket}/processed", 
-            "LocalPath": "/opt/ml/processing/output"
-          }
-        }]' \
-        --app-specification '{
-          "ImageUri": "${aws_ecr_repository.retail_models.repository_url}:latest", 
-          "ContainerArguments": [
-            "--input-data", "/opt/ml/processing/input", 
-            "--output-data", "/opt/ml/processing/output"
-          ]
-        }'
+        --processing-resources "{\"ClusterConfig\": {\"InstanceCount\": 1, \"InstanceType\": \"ml.m5.xlarge\", \"VolumeSizeInGB\": 30}}" \
+        --input-config "[{\"InputName\": \"retail-input\", \"S3Input\": {\"S3Uri\": \"s3://${aws_s3_bucket.retail_data_lake.bucket}/online_retail_II.xlsx\", \"LocalPath\": \"/opt/ml/processing/input\", \"S3DataType\": \"S3Prefix\", \"S3InputMode\": \"File\"}}]" \
+        --output-config "[{\"OutputName\": \"retail-processed\", \"S3Output\": {\"S3Uri\": \"s3://${aws_s3_bucket.retail_data_lake.bucket}/processed\", \"LocalPath\": \"/opt/ml/processing/output\"}}]" \
+        --app-specification "{\"ImageUri\": \"${aws_ecr_repository.retail_models.repository_url}:latest\", \"ContainerArguments\": [\"--input-data\", \"/opt/ml/processing/input\", \"--output-data\", \"/opt/ml/processing/output\"]}"
     EOT
 
     interpreter = ["/bin/bash", "-c"]
@@ -770,14 +798,32 @@ resource "aws_sagemaker_feature_group" "retail_features" {
 }
 
 # SageMaker Model
+# resource "aws_sagemaker_model" "retail_model" {
+#   name               = "retail-clustering-model"
+#   execution_role_arn = aws_iam_role.sagemaker_role.arn
+
+#   primary_container {
+#     image          = "${aws_ecr_repository.retail_models.repository_url}:latest"
+#     mode           = "SingleModel"
+#     model_data_url = "s3://${aws_s3_bucket.retail_data_lake.bucket}/models/clustering-model.tar.gz"
+#   }
+
+#   tags = {
+#     Environment = "Production"
+#     Project     = "RetailAnalysis"
+#   }
+# }
 resource "aws_sagemaker_model" "retail_model" {
   name               = "retail-clustering-model"
   execution_role_arn = aws_iam_role.sagemaker_role.arn
 
   primary_container {
-    image          = "${aws_ecr_repository.retail_models.repository_url}:latest"
-    mode           = "SingleModel"
-    model_data_url = "s3://${aws_s3_bucket.retail_data_lake.bucket}/models/clustering-model.tar.gz"
+    image = "${aws_ecr_repository.retail_models.repository_url}:latest"
+    mode  = "SingleModel"
+    
+   
+    # Uncomment the following line if you want to specify a model artifact later
+    # model_data_url = "s3://${aws_s3_bucket.retail_data_lake.bucket}/models/clustering-model.tar.gz"
   }
 
   tags = {
@@ -785,7 +831,6 @@ resource "aws_sagemaker_model" "retail_model" {
     Project     = "RetailAnalysis"
   }
 }
-
 # SageMaker Endpoint Configuration
 resource "aws_sagemaker_endpoint_configuration" "retail_endpoint" {
   name = "retail-clustering-endpoint-config"
