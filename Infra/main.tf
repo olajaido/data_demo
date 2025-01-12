@@ -616,7 +616,7 @@ resource "aws_sagemaker_notebook_instance_lifecycle_configuration" "init" {
 }
 
 # Comprehensive SageMaker Role Policy
- resource "aws_iam_role_policy" "sagemaker_comprehensive_policy" {
+resource "aws_iam_role_policy" "sagemaker_comprehensive_policy" {
   name = "sagemaker-retail-comprehensive-policy"
   role = aws_iam_role.sagemaker_role.id
 
@@ -626,33 +626,18 @@ resource "aws_sagemaker_notebook_instance_lifecycle_configuration" "init" {
       {
         Effect = "Allow"
         Action = [
-          # S3 Permissions
           "s3:GetObject",
           "s3:PutObject",
           "s3:ListBucket",
           "s3:DeleteObject",
-
-          # SageMaker Specific Permissions
           "sagemaker:*",
-
-          # Feature Store Permissions
-          "sagemaker:CreateFeatureGroup",
-          "sagemaker:DescribeFeatureGroup",
-          "sagemaker:ListFeatureGroups",
-          "sagemaker:UpdateFeatureGroup",
-
-          # ECR Permissions for model and container management
           "ecr:GetDownloadUrlForLayer",
           "ecr:BatchGetImage",
           "ecr:BatchCheckLayerAvailability",
           "ecr:GetAuthorizationToken",
-
-          # CloudWatch Logs for monitoring
           "logs:CreateLogGroup",
           "logs:CreateLogStream",
           "logs:PutLogEvents",
-
-          # IAM Pass Role (needed for creating resources)
           "iam:PassRole"
         ]
         Resource = "*"
@@ -708,10 +693,6 @@ resource "null_resource" "retail_preprocessing_job" {
     aws_ecr_repository.retail_models,
     aws_iam_role.sagemaker_role
   ]
-}
-resource "aws_iam_role_policy_attachment" "sagemaker_feature_store_managed_policy" {
-  role       = aws_iam_role.sagemaker_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSageMakerFeatureStoreAccess"
 }
 
 # Feature Store
