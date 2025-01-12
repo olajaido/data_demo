@@ -810,7 +810,7 @@ resource "aws_iam_role_policy" "grafana_workspace_policy" {
 resource "aws_grafana_workspace" "retail_dashboard" {
   name                     = "retail-analysis-dashboard"
   account_access_type      = "CURRENT_ACCOUNT"
-  authentication_providers = ["AWS_SSO"]
+  authentication_providers = ["EMAIL"]
   permission_type          = "SERVICE_MANAGED"
   data_sources             = ["CLOUDWATCH", "AMAZON_OPENSEARCH_SERVICE"]
   role_arn                 = aws_iam_role.grafana_workspace_role.arn
