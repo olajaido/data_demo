@@ -141,7 +141,7 @@
 #     #!/bin/bash
 #     # Install common data science libraries
 #     pip install pandas scikit-learn matplotlib seaborn boto3
-    
+
 #     # Optional: Clone your project repository
 #     # git clone https://github.com/your-org/retail-analysis-project.git
 #   EOF
@@ -720,7 +720,7 @@ resource "aws_sagemaker_feature_group" "retail_features" {
 
   feature_definition {
     feature_name = "CustomerID"
-    feature_type = "Integer"
+    feature_type = "Integral"
   }
 
   feature_definition {
@@ -730,27 +730,27 @@ resource "aws_sagemaker_feature_group" "retail_features" {
 
   feature_definition {
     feature_name = "TotalSpent"
-    feature_type = "Float"
+    feature_type = "Fractional"
   }
 
   feature_definition {
     feature_name = "Frequency"
-    feature_type = "Integer"
+    feature_type = "Integral"
   }
 
   feature_definition {
     feature_name = "AvgTransactionValue"
-    feature_type = "Float"
+    feature_type = "Fractional"
   }
 
   feature_definition {
     feature_name = "CustomerLifespan"
-    feature_type = "Integer"
+    feature_type = "Integral"
   }
 
   feature_definition {
     feature_name = "AvgPurchaseFrequency"
-    feature_type = "Float"
+    feature_type = "Fractional"
   }
 
   offline_store_config {
@@ -761,6 +761,11 @@ resource "aws_sagemaker_feature_group" "retail_features" {
 
   online_store_config {
     enable_online_store = true
+  }
+
+  tags = {
+    Environment = "Production"
+    Project     = "RetailAnalysis"
   }
 }
 
@@ -869,7 +874,7 @@ resource "aws_grafana_workspace" "retail_dashboard" {
   permission_type          = "SERVICE_MANAGED"
   data_sources             = ["CLOUDWATCH", "AMAZON_OPENSEARCH_SERVICE"]
   role_arn                 = aws_iam_role.grafana_workspace_role.arn
-  
+
 
   tags = {
     Environment = "Production"
