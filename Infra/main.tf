@@ -615,6 +615,22 @@ resource "aws_sagemaker_notebook_instance_lifecycle_configuration" "init" {
   )
 }
 
+resource "aws_iam_role" "sagemaker_role" {
+  name = "sagemaker-retail-analysis-role-${random_string.role_suffix.result}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "sagemaker.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
 # Comprehensive SageMaker Role Policy
 resource "aws_iam_role_policy" "sagemaker_comprehensive_policy" {
   name = "sagemaker-retail-comprehensive-policy"
