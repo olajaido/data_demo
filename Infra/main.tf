@@ -484,13 +484,23 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 4.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.0"
+    }
   }
 }
 
 provider "aws" {
   region = "eu-west-2"
 }
+provider "random" {}
 
+resource "random_string" "role_suffix" {
+  length  = 8
+  special = false
+  upper   = false
+}
 # VPC and Networking
 resource "aws_vpc" "main" {
   cidr_block           = "10.0.0.0/16"
@@ -558,7 +568,7 @@ resource "aws_s3_bucket_versioning" "retail_data_versioning" {
 
 # SageMaker Role
 resource "aws_iam_role" "sagemaker_role" {
-  name = "sagemaker-retail-analysis-role"
+  name = "sagemaker-retail-analysis-role-${random_string.role_suffix.result}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
