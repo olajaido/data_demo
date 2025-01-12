@@ -78,43 +78,171 @@ resource "aws_s3_bucket_versioning" "retail_data_versioning" {
 }
 
 # SageMaker Processing Job
-resource "aws_sagemaker_processing_job" "retail_preprocessing" {
-  name     = "retail-data-preprocessing"
-  role_arn = aws_iam_role.sagemaker_role.arn
+# resource "aws_sagemaker_processing_job" "retail_preprocessing" {
+#   name     = "retail-data-preprocessing"
+#   role_arn = aws_iam_role.sagemaker_role.arn
 
-  processing_resources {
-    cluster_config {
-      instance_count    = 1
-      instance_type     = "ml.m5.xlarge"
-      volume_size_in_gb = 30
-    }
-  }
+#   processing_resources {
+#     cluster_config {
+#       instance_count    = 1
+#       instance_type     = "ml.m5.xlarge"
+#       volume_size_in_gb = 30
+#     }
+#   }
 
-  input_config {
-    input_name = "retail-input"
-    s3_input {
-      s3_uri        = "${aws_s3_bucket.retail_data_lake.bucket}/online_retail_II.xlsx"
-      local_path    = "/opt/ml/processing/input"
-      s3_data_type  = "S3Prefix"
-      s3_input_mode = "File"
-    }
-  }
+#   input_config {
+#     input_name = "retail-input"
+#     s3_input {
+#       s3_uri        = "${aws_s3_bucket.retail_data_lake.bucket}/online_retail_II.xlsx"
+#       local_path    = "/opt/ml/processing/input"
+#       s3_data_type  = "S3Prefix"
+#       s3_input_mode = "File"
+#     }
+#   }
 
-  output_config {
-    output_name = "retail-processed"
-    s3_output {
-      s3_uri     = "${aws_s3_bucket.retail_data_lake.bucket}/processed"
-      local_path = "/opt/ml/processing/output"
-    }
-  }
+#   output_config {
+#     output_name = "retail-processed"
+#     s3_output {
+#       s3_uri     = "${aws_s3_bucket.retail_data_lake.bucket}/processed"
+#       local_path = "/opt/ml/processing/output"
+#     }
+#   }
 
-  app_specification {
-    image_uri = "${aws_ecr_repository.retail_models.repository_url}:latest"
-    container_arguments = [
-      "--input-data", "/opt/ml/processing/input",
-      "--output-data", "/opt/ml/processing/output"
+#   app_specification {
+#     image_uri = "${aws_ecr_repository.retail_models.repository_url}:latest"
+#     container_arguments = [
+#       "--input-data", "/opt/ml/processing/input",
+#       "--output-data", "/opt/ml/processing/output"
+#     ]
+#   }
+# }
+resource "aws_iam_role" "sagemaker_role" {
+  name = "sagemaker-retail-analysis-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "sagemaker.amazonaws.com"
+        }
+      }
     ]
+  })
+}
+
+# SageMaker Notebook Instance Lifecycle Configuration
+resource "aws_sagemaker_notebook_instance_lifecycle_configuration" "init" {
+  name = "retail-analysis-notebook-config"
+
+  on_start = base64encode(<<-EOF
+    #!/bin/bash
+    # Install common data science libraries
+    pip install pandas scikit-learn matplotlib seaborn boto3
+    
+    # Optional: Clone your project repository
+    # git clone https://github.com/your-org/retail-analysis-project.git
+  EOF
+  )
+}
+
+# Comprehensive SageMaker Role Policy
+resource "aws_iam_role_policy" "sagemaker_comprehensive_policy" {
+  name = "sagemaker-retail-comprehensive-policy"
+  role = aws_iam_role.sagemaker_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          # S3 Permissions
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:ListBucket",
+          "s3:DeleteObject",
+
+          # SageMaker Specific Permissions
+          "sagemaker:*",
+
+          # Feature Store Permissions
+          "sagemaker:CreateFeatureGroup",
+          "sagemaker:DescribeFeatureGroup",
+          "sagemaker:ListFeatureGroups",
+          "sagemaker:UpdateFeatureGroup",
+
+          # ECR Permissions for model and container management
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetAuthorizationToken",
+
+          # CloudWatch Logs for monitoring
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+
+          # IAM Pass Role (needed for creating resources)
+          "iam:PassRole"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+
+resource "null_resource" "retail_preprocessing_job" {
+  triggers = {
+    # This ensures the job is recreated if any dependencies change
+    bucket_id      = aws_s3_bucket.retail_data_lake.id
+    repository_url = aws_ecr_repository.retail_models.repository_url
+    role_arn       = aws_iam_role.sagemaker_role.arn
   }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      aws sagemaker create-processing-job \
+        --processing-job-name "retail-data-preprocessing-$(date +%Y%m%d%H%M%S)" \
+        --role-arn ${aws_iam_role.sagemaker_role.arn} \
+        --processing-resources '{"ClusterConfig": {"InstanceCount": 1, "InstanceType": "ml.m5.xlarge", "VolumeSizeInGB": 30}}' \
+        --input-config '[{
+          "InputName": "retail-input", 
+          "S3Input": {
+            "S3Uri": "s3://${aws_s3_bucket.retail_data_lake.bucket}/online_retail_II.xlsx", 
+            "LocalPath": "/opt/ml/processing/input", 
+            "S3DataType": "S3Prefix", 
+            "S3InputMode": "File"
+          }
+        }]' \
+        --output-config '[{
+          "OutputName": "retail-processed", 
+          "S3Output": {
+            "S3Uri": "s3://${aws_s3_bucket.retail_data_lake.bucket}/processed", 
+            "LocalPath": "/opt/ml/processing/output"
+          }
+        }]' \
+        --app-specification '{
+          "ImageUri": "${aws_ecr_repository.retail_models.repository_url}:latest", 
+          "ContainerArguments": [
+            "--input-data", "/opt/ml/processing/input", 
+            "--output-data", "/opt/ml/processing/output"
+          ]
+        }'
+    EOT
+
+    interpreter = ["/bin/bash", "-c"]
+  }
+
+  # Ensure this runs after the necessary resources are created
+  depends_on = [
+    aws_s3_bucket.retail_data_lake,
+    aws_ecr_repository.retail_models,
+    aws_iam_role.sagemaker_role
+  ]
 }
 
 # Feature Store
