@@ -250,7 +250,7 @@ resource "aws_sagemaker_feature_group" "retail_features" {
   feature_group_name             = "retail-customer-features"
   record_identifier_feature_name = "CustomerID"
   event_time_feature_name        = "InvoiceDate"
-  role_arn                      = aws_iam_role.sagemaker_role.arn
+  role_arn                       = aws_iam_role.sagemaker_role.arn
 
   feature_definition {
     feature_name = "TotalSpent"
@@ -334,12 +334,12 @@ resource "aws_iam_role_policy" "sagemaker_execution_policy" {
 # Update the SageMaker Model resource
 resource "aws_sagemaker_model" "retail_model" {
   name               = "retail-clustering-model"
-  execution_role_arn = aws_iam_role.sagemaker_execution_role.arn  # Added this line
+  execution_role_arn = aws_iam_role.sagemaker_execution_role.arn # Added this line
   //role_arn           = aws_iam_role.sagemaker_role.arn
 
   primary_container {
-    image = "${aws_ecr_repository.retail_models.repository_url}:latest"
-    mode  = "SingleModel"
+    image          = "${aws_ecr_repository.retail_models.repository_url}:latest"
+    mode           = "SingleModel"
     model_data_url = "s3://${aws_s3_bucket.retail_data_lake.bucket}/models/clustering-model.tar.gz"
   }
 
@@ -355,8 +355,8 @@ resource "aws_sagemaker_endpoint_configuration" "retail_endpoint" {
 
   production_variants {
     variant_name           = "AllTraffic"
-    model_name            = aws_sagemaker_model.retail_model.name
-    instance_type         = "ml.t2.medium"
+    model_name             = aws_sagemaker_model.retail_model.name
+    instance_type          = "ml.t2.medium"
     initial_instance_count = 1
   }
 
@@ -395,9 +395,9 @@ resource "aws_grafana_workspace" "retail_dashboard" {
   name                     = "retail-analysis-dashboard"
   account_access_type      = "CURRENT_ACCOUNT"
   authentication_providers = ["AWS_SSO"]
-  permission_type         = "SERVICE_MANAGED"
-  data_sources            = ["CLOUDWATCH", "AMAZON_OPENSEARCH_SERVICE"]
-  
+  permission_type          = "SERVICE_MANAGED"
+  data_sources             = ["CLOUDWATCH", "AMAZON_OPENSEARCH_SERVICE"]
+
   tags = {
     Environment = "Production"
     Project     = "RetailAnalysis"
