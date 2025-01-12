@@ -766,6 +766,45 @@ resource "aws_sagemaker_notebook_instance" "retail_analysis" {
     Project     = "RetailAnalysis"
   }
 }
+resource "aws_iam_role" "grafana_workspace_role" {
+  name = "grafana-workspace-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "grafana.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+# Grafana Workspace Role Policy
+resource "aws_iam_role_policy" "grafana_workspace_policy" {
+  name = "grafana-workspace-policy"
+  role = aws_iam_role.grafana_workspace_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "cloudwatch:GetMetricData",
+          "cloudwatch:ListMetrics",
+          "datasource:DescribeDataSource",
+          "cloudwatch:GetMetricStatistics",
+          "cloudwatch:Describe*"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
 
 # Grafana Workspace
 resource "aws_grafana_workspace" "retail_dashboard" {
@@ -774,6 +813,8 @@ resource "aws_grafana_workspace" "retail_dashboard" {
   authentication_providers = ["AWS_SSO"]
   permission_type          = "SERVICE_MANAGED"
   data_sources             = ["CLOUDWATCH", "AMAZON_OPENSEARCH_SERVICE"]
+  role_arn                 = aws_iam_role.grafana_workspace_role.arn
+  
 
   tags = {
     Environment = "Production"
