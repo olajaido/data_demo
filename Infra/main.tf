@@ -722,13 +722,30 @@ resource "null_resource" "retail_preprocessing_job" {
 
   provisioner "local-exec" {
     command = <<-EOT
+      # Create the processing job
+      PROCESSING_JOB_NAME="retail-data-preprocessing-$(date +%Y%m%d%H%M%S)"
+      echo "Creating processing job: $PROCESSING_JOB_NAME"
+      
       aws sagemaker create-processing-job \
-        --processing-job-name "retail-data-preprocessing-$(date +%Y%m%d%H%M%S)" \
+        --processing-job-name "$PROCESSING_JOB_NAME" \
         --role-arn "${aws_iam_role.sagemaker_role.arn}" \
         --processing-resources "{\"ClusterConfig\":{\"InstanceCount\":1,\"InstanceType\":\"ml.t3.medium\",\"VolumeSizeInGB\":30}}" \
         --processing-inputs "[{\"InputName\":\"retail-input\",\"S3Input\":{\"S3Uri\":\"s3://retail-analysis-data-demo/online_retail_II.xlsx\",\"LocalPath\":\"/opt/ml/processing/input\",\"S3DataType\":\"S3Prefix\",\"S3InputMode\":\"File\"}}]" \
         --processing-output-config "{\"Outputs\":[{\"OutputName\":\"retail-processed\",\"S3Output\":{\"S3Uri\":\"s3://retail-analysis-data-demo/processed\",\"LocalPath\":\"/opt/ml/processing/output\",\"S3UploadMode\":\"EndOfJob\"}}]}" \
         --app-specification "{\"ImageUri\":\"${data.aws_caller_identity.current.account_id}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com/${aws_ecr_repository.retail_models.name}:latest\",\"ContainerArguments\":[\"--input-data\",\"/opt/ml/processing/input\",\"--output-data\",\"/opt/ml/processing/output\"]}"
+      
+      echo "Waiting for processing job to complete..."
+      aws sagemaker wait processing-job-completed-or-stopped --processing-job-name "$PROCESSING_JOB_NAME"
+      
+      # Check the job status
+      STATUS=$(aws sagemaker describe-processing-job --processing-job-name "$PROCESSING_JOB_NAME" --query 'ProcessingJobStatus' --output text)
+      if [ "$STATUS" = "Failed" ]; then
+        echo "Processing job failed. Getting failure reason..."
+        aws sagemaker describe-processing-job --processing-job-name "$PROCESSING_JOB_NAME" --query 'FailureReason' --output text
+        exit 1
+      fi
+      
+      echo "Processing job completed successfully"
     EOT
   }
 
@@ -814,18 +831,7 @@ resource "aws_sagemaker_feature_group" "retail_features" {
 #   }
 # }
 
-resource "null_resource" "wait_for_processing" {
-  provisioner "local-exec" {
-    command = <<-EOT
-      aws sagemaker wait processing-job-completed-or-stopped \
-        --processing-job-name $(aws sagemaker list-processing-jobs --name-contains retail-data-preprocessing --sort-by CreationTime --sort-order Descending --query 'ProcessingJobSummaries[0].ProcessingJobName' --output text)
-    EOT
-  }
 
-  depends_on = [
-    null_resource.retail_preprocessing_job
-  ]
-}
 resource "aws_sagemaker_model" "retail_model" {
   name               = "retail-clustering-model"
   execution_role_arn = aws_iam_role.sagemaker_role.arn
