@@ -817,7 +817,7 @@ resource "aws_sagemaker_feature_group" "retail_features" {
 resource "null_resource" "wait_for_processing" {
   provisioner "local-exec" {
     command = <<-EOT
-      aws sagemaker wait processing-job-completed \
+      aws sagemaker wait processing-job-completed-or-stopped \
         --processing-job-name $(aws sagemaker list-processing-jobs --name-contains retail-data-preprocessing --sort-by CreationTime --sort-order Descending --query 'ProcessingJobSummaries[0].ProcessingJobName' --output text)
     EOT
   }
