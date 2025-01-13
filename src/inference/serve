@@ -1,0 +1,81 @@
+#!/usr/bin/env python
+
+import os
+import json
+import flask
+from flask import Flask, Response
+from model_handler import ModelHandler
+from logger_config import get_logger
+from monitoring import monitor_prediction
+
+# Initialize Flask app
+app = Flask(__name__)
+
+# Initialize logger
+logger = get_logger(__name__)
+
+# Initialize model handler
+try:
+    model_handler = ModelHandler()
+    logger.info("Model handler initialized successfully")
+except Exception as e:
+    logger.error(f"Failed to initialize model handler: {str(e)}")
+    raise
+
+@app.route('/ping', methods=['GET'])
+def ping():
+    """Determine if the container is working and healthy."""
+    try:
+        # Check if model is loaded
+        if model_handler.model is not None:
+            return Response(response='\n', status=200, mimetype='application/json')
+        else:
+            return Response(response='Model not loaded', status=500, mimetype='text/plain')
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        return Response(response=str(e), status=500, mimetype='text/plain')
+
+@app.route('/invocations', methods=['POST'])
+def transformation():
+    """Handle model predictions"""
+    if flask.request.content_type != 'application/json':
+        logger.error("Received request with unsupported content type")
+        return flask.Response(
+            response='This predictor only supports JSON data',
+            status=415, 
+            mimetype='text/plain'
+        )
+
+    try:
+        # Get input data
+        data = flask.request.get_json()
+        logger.info("Received prediction request")
+        
+        # Make prediction using model handler
+        predictions = model_handler.predict(data)
+        
+        # Monitor the prediction
+        try:
+            monitor_prediction(data, predictions)
+        except Exception as e:
+            logger.warning(f"Monitoring failed but prediction succeeded: {str(e)}")
+        
+        # Return response
+        logger.info("Prediction successful")
+        return flask.Response(
+            response=json.dumps(predictions),
+            status=200,
+            mimetype='application/json'
+        )
+    except Exception as e:
+        logger.error(f"Prediction failed: {str(e)}")
+        return flask.Response(
+            response=str(e),
+            status=500,
+            mimetype='text/plain'
+        )
+
+if __name__ == '__main__':
+    # Start the Flask app
+    logger.info("Starting Flask server")
+    app.run(host='0.0.0.0', port=8080)
