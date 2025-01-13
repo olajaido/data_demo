@@ -722,42 +722,12 @@ resource "null_resource" "retail_preprocessing_job" {
     command = <<-EOT
       aws sagemaker create-processing-job \
         --processing-job-name "retail-data-preprocessing-$(date +%Y%m%d%H%M%S)" \
-        --role-arn ${aws_iam_role.sagemaker_role.arn} \
-        --processing-resources '{
-          "ClusterConfig": {
-            "InstanceCount": 1,
-            "InstanceType": "ml.m5.xlarge",
-            "VolumeSizeInGB": 30
-          }
-        }' \
-        --processing-inputs '[{
-          "InputName": "retail-input",
-          "S3Input": {
-            "S3Uri": "s3://${aws_s3_bucket.retail_data_lake.bucket}/online_retail_II.xlsx",
-            "LocalPath": "/opt/ml/processing/input",
-            "S3DataType": "S3Prefix",
-            "S3InputMode": "File"
-          }
-        }]' \
-        --processing-outputs '[{
-          "OutputName": "retail-processed",
-          "S3Output": {
-            "S3Uri": "s3://${aws_s3_bucket.retail_data_lake.bucket}/processed",
-            "LocalPath": "/opt/ml/processing/output"
-          }
-        }]' \
-        --app-specification '{
-          "ImageUri": "${aws_ecr_repository.retail_models.repository_url}:latest",
-          "ContainerArguments": [
-            "--input-data",
-            "/opt/ml/processing/input",
-            "--output-data",
-            "/opt/ml/processing/output"
-          ]
-        }'
+        --role-arn "${aws_iam_role.sagemaker_role.arn}" \
+        --processing-resources "{\"ClusterConfig\":{\"InstanceCount\":1,\"InstanceType\":\"ml.m5.xlarge\",\"VolumeSizeInGB\":30}}" \
+        --processing-inputs "[{\"InputName\":\"retail-input\",\"S3Input\":{\"S3Uri\":\"s3://${aws_s3_bucket.retail_data_lake.bucket}/online_retail_II.xlsx\",\"LocalPath\":\"/opt/ml/processing/input\",\"S3DataType\":\"S3Prefix\",\"S3InputMode\":\"File\"}}]" \
+        --processing-output-config "{\"Outputs\":[{\"OutputName\":\"retail-processed\",\"S3Output\":{\"S3Uri\":\"s3://${aws_s3_bucket.retail_data_lake.bucket}/processed\",\"LocalPath\":\"/opt/ml/processing/output\"}}]}" \
+        --app-specification "{\"ImageUri\":\"${aws_ecr_repository.retail_models.repository_url}:latest\",\"ContainerArguments\":[\"--input-data\",\"/opt/ml/processing/input\",\"--output-data\",\"/opt/ml/processing/output\"]}"
     EOT
-
-    interpreter = ["/bin/bash", "-c"]
   }
 
   depends_on = [
@@ -841,6 +811,19 @@ resource "aws_sagemaker_feature_group" "retail_features" {
 #     Project     = "RetailAnalysis"
 #   }
 # }
+
+resource "null_resource" "wait_for_processing" {
+  provisioner "local-exec" {
+    command = <<-EOT
+      aws sagemaker wait processing-job-completed \
+        --processing-job-name $(aws sagemaker list-processing-jobs --name-contains retail-data-preprocessing --sort-by CreationTime --sort-order Descending --query 'ProcessingJobSummaries[0].ProcessingJobName' --output text)
+    EOT
+  }
+
+  depends_on = [
+    null_resource.retail_preprocessing_job
+  ]
+}
 resource "aws_sagemaker_model" "retail_model" {
   name               = "retail-clustering-model"
   execution_role_arn = aws_iam_role.sagemaker_role.arn
@@ -876,24 +859,45 @@ resource "aws_sagemaker_model" "retail_model" {
 #   }
 # }
 
+
 resource "aws_sagemaker_endpoint_configuration" "retail_endpoint" {
   name = "retail-clustering-endpoint-config"
 
   production_variants {
     variant_name           = "AllTraffic"
-    model_name             = aws_sagemaker_model.retail_model.name
-    instance_type          = "ml.t2.medium"
+    model_name            = aws_sagemaker_model.retail_model.name
+    instance_type         = "ml.t2.medium"
     initial_instance_count = 1
-    
-    # Add initial weight and routing configuration
     initial_variant_weight = 1.0
   }
 
-  # Optional: Add tags for better tracking
   tags = {
     Environment = "Production"
     Project     = "RetailAnalysis"
   }
+
+  depends_on = [
+    null_resource.wait_for_processing,
+    aws_sagemaker_model.retail_model
+  ]
+}
+resource "aws_sagemaker_endpoint" "retail_endpoint" {
+  name                 = "retail-clustering-endpoint"
+  endpoint_config_name = aws_sagemaker_endpoint_configuration.retail_endpoint.name
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  tags = {
+    Environment = "Testing"
+    Project     = "RetailAnalysis"
+    Endpoint    = "Clustering-Model"
+  }
+
+  depends_on = [
+    aws_sagemaker_endpoint_configuration.retail_endpoint
+  ]
 }
 
 
@@ -907,21 +911,21 @@ resource "aws_sagemaker_endpoint_configuration" "retail_endpoint" {
 #     Project     = "RetailAnalysis"
 #   }
 # }
-resource "aws_sagemaker_endpoint" "retail_endpoint" {
-  name                 = "retail-clustering-endpoint"
-  endpoint_config_name = aws_sagemaker_endpoint_configuration.retail_endpoint.name
+# resource "aws_sagemaker_endpoint" "retail_endpoint" {
+#   name                 = "retail-clustering-endpoint"
+#   endpoint_config_name = aws_sagemaker_endpoint_configuration.retail_endpoint.name
 
-  # Add a lifecycle block to handle potential deployment issues
-  lifecycle {
-    create_before_destroy = true
-  }
+#   # Add a lifecycle block to handle potential deployment issues
+#   lifecycle {
+#     create_before_destroy = true
+#   }
 
-  tags = {
-    Environment = "Production"
-    Project     = "RetailAnalysis"
-    Endpoint    = "Clustering-Model"
-  }
-  }
+#   tags = {
+#     Environment = "Production"
+#     Project     = "RetailAnalysis"
+#     Endpoint    = "Clustering-Model"
+#   }
+#   }
 
 
 
