@@ -756,6 +756,7 @@ resource "null_resource" "retail_preprocessing_job" {
   ]
 }
 
+
 # Feature Store
 resource "aws_sagemaker_feature_group" "retail_features" {
   feature_group_name             = "retail-customer-features"
@@ -831,7 +832,6 @@ resource "aws_sagemaker_feature_group" "retail_features" {
 #   }
 # }
 
-
 resource "aws_sagemaker_model" "retail_model" {
   name               = "retail-clustering-model"
   execution_role_arn = aws_iam_role.sagemaker_role.arn
@@ -839,10 +839,10 @@ resource "aws_sagemaker_model" "retail_model" {
   primary_container {
     image = "${aws_ecr_repository.retail_models.repository_url}:latest"
     mode  = "SingleModel"
-    
-   
-    # Uncomment the following line if you want to specify a model artifact later
-    # model_data_url = "s3://${aws_s3_bucket.retail_data_lake.bucket}/models/clustering-model.tar.gz"
+    environment = {
+      SAGEMAKER_PROGRAM           = "serve"
+      SAGEMAKER_SUBMIT_DIRECTORY  = "/opt/ml/model"
+    }
   }
 
   tags = {
@@ -850,6 +850,7 @@ resource "aws_sagemaker_model" "retail_model" {
     Project     = "RetailAnalysis"
   }
 }
+
 # SageMaker Endpoint Configuration
 # resource "aws_sagemaker_endpoint_configuration" "retail_endpoint" {
 #   name = "retail-clustering-endpoint-config"
@@ -868,8 +869,9 @@ resource "aws_sagemaker_model" "retail_model" {
 # }
 
 
+
 resource "aws_sagemaker_endpoint_configuration" "retail_endpoint" {
-  name = "retail-clustering-endpoint-config"
+  name = "retail-clustering-endpoint-config-${formatdate("YYYYMMDDhhmmss", timestamp())}"
 
   production_variants {
     variant_name           = "AllTraffic"
@@ -880,15 +882,12 @@ resource "aws_sagemaker_endpoint_configuration" "retail_endpoint" {
   }
 
   tags = {
-    Environment = "Production"
+    Environment = "Testing"
     Project     = "RetailAnalysis"
   }
-
-  depends_on = [
-    null_resource.retail_preprocessing_job,
-    aws_sagemaker_model.retail_model
-  ]
 }
+
+
 resource "aws_sagemaker_endpoint" "retail_endpoint" {
   name                 = "retail-clustering-endpoint"
   endpoint_config_name = aws_sagemaker_endpoint_configuration.retail_endpoint.name
@@ -898,7 +897,7 @@ resource "aws_sagemaker_endpoint" "retail_endpoint" {
   }
 
   tags = {
-    Environment = "Testing"
+    Environment = "Production"
     Project     = "RetailAnalysis"
     Endpoint    = "Clustering-Model"
   }
@@ -907,7 +906,6 @@ resource "aws_sagemaker_endpoint" "retail_endpoint" {
     aws_sagemaker_endpoint_configuration.retail_endpoint
   ]
 }
-
 
 # SageMaker Endpoint
 # resource "aws_sagemaker_endpoint" "retail_endpoint" {
