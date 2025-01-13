@@ -723,10 +723,38 @@ resource "null_resource" "retail_preprocessing_job" {
       aws sagemaker create-processing-job \
         --processing-job-name "retail-data-preprocessing-$(date +%Y%m%d%H%M%S)" \
         --role-arn ${aws_iam_role.sagemaker_role.arn} \
-        --processing-resources "{\"ClusterConfig\": {\"InstanceCount\": 1, \"InstanceType\": \"ml.m5.xlarge\", \"VolumeSizeInGB\": 30}}" \
-        --input-config "[{\"InputName\": \"retail-input\", \"S3Input\": {\"S3Uri\": \"s3://${aws_s3_bucket.retail_data_lake.bucket}/online_retail_II.xlsx\", \"LocalPath\": \"/opt/ml/processing/input\", \"S3DataType\": \"S3Prefix\", \"S3InputMode\": \"File\"}}]" \
-        --output-config "[{\"OutputName\": \"retail-processed\", \"S3Output\": {\"S3Uri\": \"s3://${aws_s3_bucket.retail_data_lake.bucket}/processed\", \"LocalPath\": \"/opt/ml/processing/output\"}}]" \
-        --app-specification "{\"ImageUri\": \"${aws_ecr_repository.retail_models.repository_url}:latest\", \"ContainerArguments\": [\"--input-data\", \"/opt/ml/processing/input\", \"--output-data\", \"/opt/ml/processing/output\"]}"
+        --processing-resources '{
+          "ClusterConfig": {
+            "InstanceCount": 1,
+            "InstanceType": "ml.m5.xlarge",
+            "VolumeSizeInGB": 30
+          }
+        }' \
+        --processing-inputs '[{
+          "InputName": "retail-input",
+          "S3Input": {
+            "S3Uri": "s3://${aws_s3_bucket.retail_data_lake.bucket}/online_retail_II.xlsx",
+            "LocalPath": "/opt/ml/processing/input",
+            "S3DataType": "S3Prefix",
+            "S3InputMode": "File"
+          }
+        }]' \
+        --processing-outputs '[{
+          "OutputName": "retail-processed",
+          "S3Output": {
+            "S3Uri": "s3://${aws_s3_bucket.retail_data_lake.bucket}/processed",
+            "LocalPath": "/opt/ml/processing/output"
+          }
+        }]' \
+        --app-specification '{
+          "ImageUri": "${aws_ecr_repository.retail_models.repository_url}:latest",
+          "ContainerArguments": [
+            "--input-data",
+            "/opt/ml/processing/input",
+            "--output-data",
+            "/opt/ml/processing/output"
+          ]
+        }'
     EOT
 
     interpreter = ["/bin/bash", "-c"]
@@ -832,6 +860,22 @@ resource "aws_sagemaker_model" "retail_model" {
   }
 }
 # SageMaker Endpoint Configuration
+# resource "aws_sagemaker_endpoint_configuration" "retail_endpoint" {
+#   name = "retail-clustering-endpoint-config"
+
+#   production_variants {
+#     variant_name           = "AllTraffic"
+#     model_name             = aws_sagemaker_model.retail_model.name
+#     instance_type          = "ml.t2.medium"
+#     initial_instance_count = 1
+#   }
+
+#   tags = {
+#     Environment = "Production"
+#     Project     = "RetailAnalysis"
+#   }
+# }
+
 resource "aws_sagemaker_endpoint_configuration" "retail_endpoint" {
   name = "retail-clustering-endpoint-config"
 
@@ -840,24 +884,46 @@ resource "aws_sagemaker_endpoint_configuration" "retail_endpoint" {
     model_name             = aws_sagemaker_model.retail_model.name
     instance_type          = "ml.t2.medium"
     initial_instance_count = 1
+    
+    # Add initial weight and routing configuration
+    initial_variant_weight = 1.0
   }
 
+  # Optional: Add tags for better tracking
   tags = {
     Environment = "Production"
     Project     = "RetailAnalysis"
   }
 }
 
+
 # SageMaker Endpoint
+# resource "aws_sagemaker_endpoint" "retail_endpoint" {
+#   name                 = "retail-clustering-endpoint"
+#   endpoint_config_name = aws_sagemaker_endpoint_configuration.retail_endpoint.name
+
+#   tags = {
+#     Environment = "Production"
+#     Project     = "RetailAnalysis"
+#   }
+# }
 resource "aws_sagemaker_endpoint" "retail_endpoint" {
   name                 = "retail-clustering-endpoint"
   endpoint_config_name = aws_sagemaker_endpoint_configuration.retail_endpoint.name
 
+  # Add a lifecycle block to handle potential deployment issues
+  lifecycle {
+    create_before_destroy = true
+  }
+
   tags = {
     Environment = "Production"
     Project     = "RetailAnalysis"
+    Endpoint    = "Clustering-Model"
   }
-}
+  }
+
+
 
 # SageMaker Notebook Instance
 resource "aws_sagemaker_notebook_instance" "retail_analysis" {
