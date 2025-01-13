@@ -885,7 +885,7 @@ resource "aws_sagemaker_endpoint_configuration" "retail_endpoint" {
   }
 
   depends_on = [
-    null_resource.wait_for_processing,
+    null_resource.retail_preprocessing_job,
     aws_sagemaker_model.retail_model
   ]
 }
