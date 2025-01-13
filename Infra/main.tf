@@ -723,7 +723,7 @@ resource "null_resource" "retail_preprocessing_job" {
       aws sagemaker create-processing-job \
         --processing-job-name "retail-data-preprocessing-$(date +%Y%m%d%H%M%S)" \
         --role-arn "${aws_iam_role.sagemaker_role.arn}" \
-        --processing-resources "{\"ClusterConfig\":{\"InstanceCount\":1,\"InstanceType\":\"ml.m5.xlarge\",\"VolumeSizeInGB\":30}}" \
+        --processing-resources "{\"ClusterConfig\":{\"InstanceCount\":1,\"InstanceType\":\"ml.t3.medium\",\"VolumeSizeInGB\":30}}" \
         --processing-inputs "[{\"InputName\":\"retail-input\",\"S3Input\":{\"S3Uri\":\"s3://retail-analysis-data-demo/online_retail_II.xlsx\",\"LocalPath\":\"/opt/ml/processing/input\",\"S3DataType\":\"S3Prefix\",\"S3InputMode\":\"File\"}}]" \
         --processing-output-config "{\"Outputs\":[{\"OutputName\":\"retail-processed\",\"S3Output\":{\"S3Uri\":\"s3://retail-analysis-data-demo/processed\",\"LocalPath\":\"/opt/ml/processing/output\",\"S3UploadMode\":\"EndOfJob\"}}]}" \
         --app-specification "{\"ImageUri\":\"***.dkr.ecr.eu-west-2.amazonaws.com/retail-analysis-demo-models:latest\",\"ContainerArguments\":[\"--input-data\",\"/opt/ml/processing/input\",\"--output-data\",\"/opt/ml/processing/output\"]}"
